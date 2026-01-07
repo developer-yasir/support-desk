@@ -37,12 +37,12 @@ export const api = {
         }
     },
 
-    register: async (name, email, password) => {
+    register: async (data) => {
         try {
             const response = await fetch(`${API_URL}/auth/register`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, email, password }),
+                body: JSON.stringify(data),
             });
             return handleResponse(response);
         } catch (error) {
@@ -52,15 +52,29 @@ export const api = {
     },
 
     // Tickets
-    getTickets: async () => {
+    getTickets: async (params = {}) => {
         try {
-            const response = await fetch(`${API_URL}/tickets`, {
+            const queryString = new URLSearchParams(params).toString();
+            const response = await fetch(`${API_URL}/tickets?${queryString}`, {
                 method: 'GET',
                 headers: getHeaders(),
             });
             return handleResponse(response);
         } catch (error) {
             console.error('Get tickets error:', error);
+            throw error;
+        }
+    },
+
+    getDashboardStats: async () => {
+        try {
+            const response = await fetch(`${API_URL}/tickets/stats`, {
+                method: 'GET',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Get stats error:', error);
             throw error;
         }
     },
@@ -120,10 +134,156 @@ export const api = {
         }
     },
 
+    forwardTicket: async (id, data) => {
+        try {
+            const response = await fetch(`${API_URL}/tickets/${id}/forward`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Forward ticket error:', error);
+            throw error;
+        }
+    },
+
     // Users/Agents (if needed later)
+    // Companies
+    getCompanies: async () => {
+        try {
+            const response = await fetch(`${API_URL}/companies`, {
+                method: 'GET',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Get companies error:', error);
+            throw error;
+        }
+    },
+
+    createCompany: async (data) => {
+        try {
+            const response = await fetch(`${API_URL}/companies`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Create company error:', error);
+            throw error;
+        }
+    },
+
+    updateCompany: async (id, data) => {
+        try {
+            const response = await fetch(`${API_URL}/companies/${id}`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Update company error:', error);
+            throw error;
+        }
+    },
+
+    deleteCompany: async (id) => {
+        try {
+            const response = await fetch(`${API_URL}/companies/${id}`, {
+                method: 'DELETE',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Delete company error:', error);
+            throw error;
+        }
+    },
+
+    // Contacts (Users)
+    getContacts: async (params = {}) => {
+        try {
+            const queryString = new URLSearchParams({ role: 'customer', ...params }).toString();
+            const response = await fetch(`${API_URL}/users?${queryString}`, {
+                method: 'GET',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Get contacts error:', error);
+            throw error;
+        }
+    },
+
+    createContact: async (data) => {
+        try {
+            const response = await fetch(`${API_URL}/users`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Create contact error:', error);
+            throw error;
+        }
+    },
+
+    updateContact: async (id, data) => {
+        try {
+            const response = await fetch(`${API_URL}/users/${id}`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Update contact error:', error);
+            throw error;
+        }
+    },
+
+    deleteContact: async (id) => {
+        try {
+            const response = await fetch(`${API_URL}/users/${id}`, {
+                method: 'DELETE',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Delete contact error:', error);
+            throw error;
+        }
+    },
+
+    // Reports
+    getReportData: async (range) => {
+        try {
+            const response = await fetch(`${API_URL}/reports/dashboard?range=${range}`, {
+                method: 'GET',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Get report data error:', error);
+            throw error;
+        }
+    },
+
     getAgents: async () => {
-        // This endpoint might need to be created on backend or use existing user logic
-        // For now we might need to rely on what we have or add an endpoint
-        return [];
+        try {
+            const response = await fetch(`${API_URL}/users?role=agent`, {
+                method: 'GET',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Get agents error:', error);
+            throw error;
+        }
     }
 };

@@ -5,14 +5,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Headphones, Loader2 } from "lucide-react";
+import { Headphones, Loader2, Building2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 export default function Register() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [role, setRole] = useState("customer");
+
+  // Company Manager specific fields
+  const [companyName, setCompanyName] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [phone, setPhone] = useState("");
+
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -30,8 +43,26 @@ export default function Register() {
       return;
     }
 
+    if (role === "manager" && !companyName.trim()) {
+      toast.error("Company Name is required for managers");
+      return;
+    }
+
     setLoading(true);
-    const result = await register(email, password, name);
+
+    const data = {
+      name,
+      email,
+      password,
+      role,
+      ...(role === "manager" && {
+        companyName,
+        jobTitle,
+        phone
+      })
+    };
+
+    const result = await register(data);
 
     if (result.success) {
       toast.success("Account created successfully!");
@@ -57,6 +88,13 @@ export default function Register() {
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            <Tabs defaultValue="customer" onValueChange={setRole} className="w-full mb-6">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="customer">Customer</TabsTrigger>
+                <TabsTrigger value="manager">Company Manager</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
               <Input
@@ -79,6 +117,49 @@ export default function Register() {
                 required
               />
             </div>
+
+            {role === "manager" && (
+              <>
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <Label htmlFor="companyName">Company Name *</Label>
+                  <div className="relative">
+                    <Building2 className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="companyName"
+                      type="text"
+                      placeholder="Acme Inc."
+                      className="pl-9"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      required={role === "manager"}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                  <div className="space-y-2">
+                    <Label htmlFor="jobTitle">Job Title</Label>
+                    <Input
+                      id="jobTitle"
+                      type="text"
+                      placeholder="IT Manager"
+                      value={jobTitle}
+                      onChange={(e) => setJobTitle(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone</Label>
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="+1 (555)..."
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input

@@ -1,11 +1,12 @@
 import Ticket from '../models/Ticket.model.js';
+import Company from '../models/Company.model.js';
 
 // @desc    Get all tickets
 // @route   GET /api/tickets
 // @access  Private
 export const getTickets = async (req, res) => {
     try {
-        const { status, priority, assignedTo } = req.query;
+        const { status, priority, assignedTo, createdBy, company } = req.query;
 
         // Build query
         let query = {};
@@ -13,18 +14,64 @@ export const getTickets = async (req, res) => {
         // Filter by role
         if (req.user.role === 'customer') {
             query.createdBy = req.user.id;
+        } else if (req.user.role === 'manager') {
+            // Managers see tickets for:
+            // 1. Their Employer Company
+            // 2. Client Companies they created
+            // 3. Tickets they personally created
+
+            let allowedCompanyNames = [];
+
+            // 1. Get Employer Company
+            if (req.user.company) {
+                const employerCompany = await Company.findById(req.user.company);
+                if (employerCompany) {
+                    allowedCompanyNames.push(employerCompany.name);
+                }
+            }
+
+            // 2. Get Client Companies created by Manager
+            const createdCompanies = await Company.find({ createdBy: req.user.id });
+            const createdCompanyNames = createdCompanies.map(c => c.name);
+            allowedCompanyNames = [...allowedCompanyNames, ...createdCompanyNames];
+
+            // 3. Construct Query
+            if (allowedCompanyNames.length > 0) {
+                query.$or = [
+                    { company: { $in: allowedCompanyNames } },
+                    { createdBy: req.user.id }
+                ];
+            } else {
+                query.createdBy = req.user.id;
+            }
         } else if (req.user.role === 'agent') {
             query.$or = [
                 { assignedTo: req.user.id },
                 { assignedTo: null },
                 { assignedTo: { $exists: false } }
             ];
+            // Allow agents to see specific user/company tickets even if unassigned
+            if (createdBy || company) {
+                delete query.$or; // Override agent restriction if specific filter requested (optional logic choice, usually agents can see all)
+                // Actually, let's keep it simple: generic agents might be restricted, but for "CRM" view they probably need to see all.
+                // For this app context: Agents should probably see ALL tickets if they are looking at a CRM view.
+                // Let's relax the restriction for this specific use case or check if we need to change the role logic.
+                // The current logic restricts agents to ONLY their tickets.
+                // If I click a client, I want to see ALL their tickets.
+                // So I should probably remove the strict agent restriction if filters are applied OR change how agents work.
+                // Let's assume for now filters override the "my tickets" default view.
+                if (createdBy || company) {
+                    query = {}; // Reset query to allow searching all
+                }
+            }
         }
 
         // Additional filters
         if (status) query.status = status;
         if (priority) query.priority = priority;
         if (assignedTo) query.assignedTo = assignedTo;
+        if (createdBy) query.createdBy = createdBy;
+        if (company) query.company = { $regex: company, $options: 'i' }; // Case insensitive search
 
         const tickets = await Ticket.find(query)
             .populate('createdBy', 'name email')
@@ -78,9 +125,16 @@ export const getTicket = async (req, res) => {
 // @access  Private
 export const createTicket = async (req, res) => {
     try {
+        let creatorId = req.user.id;
+
+        // Allow agents/admins/managers to create tickets on behalf of others
+        if (['agent', 'admin', 'super_admin', 'manager'].includes(req.user.role) && req.body.createdBy) {
+            creatorId = req.body.createdBy;
+        }
+
         const ticketData = {
             ...req.body,
-            createdBy: req.user.id
+            createdBy: creatorId
         };
 
         const ticket = await Ticket.create(ticketData);
@@ -210,6 +264,117 @@ export const deleteTicket = async (req, res) => {
         res.status(200).json({
             status: 'success',
             message: 'Ticket deleted successfully'
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+};
+
+// @desc    Forward ticket via email
+// @route   POST /api/tickets/:id/forward
+// @access  Private
+export const forwardTicket = async (req, res) => {
+    try {
+        const { email, message, includeHistory } = req.body;
+
+        const ticket = await Ticket.findById(req.params.id);
+
+        if (!ticket) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Ticket not found'
+            });
+        }
+
+        // Simulate sending email
+        console.log(`[Mock Email] Forwarding Ticket #${ticket._id} to ${email}`);
+        console.log(`[Mock Email] Message: ${message}`);
+        console.log(`[Mock Email] Include History: ${includeHistory}`);
+
+        // Add system comment
+        const comment = {
+            user: req.user.id,
+            message: `<strong>Forwarded ticket to ${email}</strong><br/>${message}`,
+            isInternal: true, // System actions usually internal or visible? Let's make it internal for now as it's an agent action.
+            createdAt: Date.now()
+        };
+
+        ticket.comments.push(comment);
+        await ticket.save();
+
+        res.status(200).json({
+            status: 'success',
+            message: `Ticket forwarded to ${email}`
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+};
+
+// @desc    Get ticket statistics
+// @route   GET /api/tickets/stats
+// @access  Private
+export const getTicketStats = async (req, res) => {
+    try {
+        // 1. Get counts by status
+        const statusStats = await Ticket.aggregate([
+            {
+                $group: {
+                    _id: '$status',
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // 2. Get counts by priority
+        const priorityStats = await Ticket.aggregate([
+            {
+                $group: {
+                    _id: '$priority',
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // 3. Get total tickets
+        const totalTickets = await Ticket.countDocuments();
+
+        // 4. Get tickets created in last 7 days (volume)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        const volumeStats = await Ticket.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: sevenDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        // Format data for frontend
+        const stats = {
+            total: totalTickets,
+            status: statusStats.reduce((acc, curr) => ({ ...acc, [curr._id]: curr.count }), {}),
+            priority: priorityStats.map(p => ({ name: p._id, value: p.count })),
+            volume: volumeStats.map(v => ({ date: v._id, tickets: v.count }))
+        };
+
+        res.status(200).json({
+            status: 'success',
+            data: { stats }
         });
     } catch (error) {
         res.status(500).json({

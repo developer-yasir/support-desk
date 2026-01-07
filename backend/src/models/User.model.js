@@ -35,6 +35,18 @@ const userSchema = new mongoose.Schema({
     },
     lastLogin: {
         type: Date
+    },
+    company: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Company'
+    },
+    phone: {
+        type: String,
+        trim: true
+    },
+    jobTitle: {
+        type: String,
+        trim: true
     }
 }, {
     timestamps: true

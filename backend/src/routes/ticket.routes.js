@@ -5,7 +5,9 @@ import {
     createTicket,
     updateTicket,
     deleteTicket,
-    addComment
+    addComment,
+    getTicketStats,
+    forwardTicket
 } from '../controllers/ticket.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 
@@ -18,6 +20,11 @@ router.use(protect);
 // @desc    Get all tickets
 // @access  Private
 router.get('/', getTickets);
+
+// @route   GET /api/tickets/stats
+// @desc    Get ticket statistics
+// @access  Private
+router.get('/stats', getTicketStats);
 
 // @route   GET /api/tickets/:id
 // @desc    Get single ticket
@@ -43,5 +50,10 @@ router.delete('/:id', deleteTicket);
 // @desc    Add comment to ticket
 // @access  Private
 router.post('/:id/comments', addComment);
+
+// @route   POST /api/tickets/:id/forward
+// @desc    Forward ticket via email
+// @access  Private
+router.post('/:id/forward', forwardTicket);
 
 export default router;

@@ -46,6 +46,7 @@ import CannedResponsesDialog from "../components/tickets/CannedResponsesDialog";
 import TimeTracker from "../components/tickets/TimeTracker";
 import CollisionDetector from "../components/tickets/CollisionDetector";
 import { useAgentSignature, AgentSignatureSettings, SignaturePreview } from "../components/tickets/AgentSignature";
+import ForwardTicketDialog from "../components/tickets/ForwardTicketDialog";
 
 // Avatar colors based on name initial
 const getAvatarColor = (name) => {
@@ -93,12 +94,34 @@ export default function TicketDetail() {
   const [replyContent, setReplyContent] = useState("");
   const [isInternal, setIsInternal] = useState(false);
   const [showActivities, setShowActivities] = useState(false);
+  const [isForwardDialogOpen, setIsForwardDialogOpen] = useState(false);
 
   const { signature, appendSignature } = useAgentSignature(user?.id);
 
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isReplyBoxOpen, setIsReplyBoxOpen] = useState(false);
+
+  // Load draft from local storage
+  useEffect(() => {
+    const draft = localStorage.getItem(`ticket_reply_draft_${id}`);
+    if (draft) {
+      setReplyContent(draft);
+    }
+  }, [id]);
+
+  // Save draft to local storage
+  useEffect(() => {
+    if (replyContent) {
+      localStorage.setItem(`ticket_reply_draft_${id}`, replyContent);
+    } else {
+      // Only remove if it was previously set (handled by explicit removal on send)
+      // But if user deletes text manually, we should update LS to empty or remove.
+      // Let's just set it.
+      localStorage.removeItem(`ticket_reply_draft_${id}`);
+    }
+  }, [replyContent, id]);
 
   useEffect(() => {
     const fetchTicket = async () => {
@@ -218,6 +241,10 @@ export default function TicketDetail() {
 
       setTicket(fetchedTicket);
 
+      // Clear draft
+      localStorage.removeItem(`ticket_reply_draft_${id}`);
+      setIsReplyBoxOpen(false);
+
     } catch (error) {
       console.error("Failed to send reply:", error);
       toast.error("Failed to send reply");
@@ -233,6 +260,53 @@ export default function TicketDetail() {
     console.log(`Logged ${seconds} seconds for ticket ${id}`);
   };
 
+  const handleAddNote = () => {
+    setIsInternal(true);
+    setIsReplyBoxOpen(true);
+    // Scroll to reply box? Maybe just opening is enough.
+  };
+
+  const handleCloseTicket = async () => {
+    try {
+      await api.updateTicket(id, { status: 'closed' });
+      setTicket((prev) => ({ ...prev, status: 'closed' }));
+      setTicketStatus('closed');
+      toast.success("Ticket closed successfully");
+    } catch (error) {
+      console.error("Failed to close ticket:", error);
+      toast.error("Failed to close ticket");
+    }
+  };
+
+  const handleDeleteTicket = async () => {
+    if (confirm("Are you sure you want to delete this ticket? This action cannot be undone.")) {
+      try {
+        await api.deleteTicket(id);
+        toast.success("Ticket deleted successfully");
+        // Redirect logic would need useNavigate, assuming it's available or we add it
+        // Actually Link is imported, but useNavigate is not.
+        // I need to add useNavigate import and hook.
+        // For now let's just use window.location or assume useNavigate is next step.
+        // Wait, useNavigate IS imported in line 2? Let me check file view.
+        // Line 2: import { useParams, Link } from "react-router-dom"; -> useNavigate is MISSING.
+        // I will add it in next step. For now leaving the call.
+        window.location.href = "/tickets";
+      } catch (error) {
+        console.error("Failed to delete ticket:", error);
+        toast.error("Failed to delete ticket");
+      }
+    }
+  };
+
+  const handleForward = () => setIsForwardDialogOpen(true);
+  const handleMerge = () => toast.info("Merging feature coming soon");
+
+  // Sidebar actions
+  const handleSettings = () => toast.info("Settings feature coming soon");
+  const handlePrint = () => window.print();
+  const handleTimer = () => setShowActivities(!showActivities); // Toggle for now
+  const handleCalendar = () => toast.info("Use the 'Edit' button under Resolution Due to change date");
+
   const statusConfig = STATUSES.find((s) => s.id === ticket.status);
   const isOverdue =
     new Date(ticket.slaDeadline) < new Date() &&
@@ -247,6 +321,13 @@ export default function TicketDetail() {
       {isAgent && (
         <CollisionDetector ticketId={id} currentUserId={user?.id} />
       )}
+
+      {/* Dialogs */}
+      <ForwardTicketDialog
+        ticketId={id}
+        open={isForwardDialogOpen}
+        onOpenChange={setIsForwardDialogOpen}
+      />
 
       {/* Header with breadcrumb */}
       <div className="flex items-center justify-between px-4 md:px-6 py-3 border-b bg-background">
@@ -274,27 +355,57 @@ export default function TicketDetail() {
             <Star className="h-4 w-4" />
           </Button>
           <Separator orientation="vertical" className="h-6 mx-1" />
-          <Button variant="outline" size="sm" className="gap-1.5 h-8">
+          <Button
+            variant={isReplyBoxOpen ? "default" : "outline"}
+            size="sm"
+            className="gap-1.5 h-8"
+            onClick={() => setIsReplyBoxOpen(!isReplyBoxOpen)}
+          >
             <Reply className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Reply</span>
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 h-8">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8"
+            onClick={handleAddNote}
+          >
             <FileText className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Add note</span>
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 h-8 hidden md:flex">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8 hidden md:flex"
+            onClick={handleForward}
+          >
             <Forward className="h-3.5 w-3.5" />
             Forward
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 h-8 hidden md:flex">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8 hidden md:flex"
+            onClick={handleCloseTicket}
+          >
             <CheckCircle className="h-3.5 w-3.5" />
             Close
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 h-8 hidden lg:flex">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8 hidden lg:flex"
+            onClick={handleMerge}
+          >
             <Merge className="h-3.5 w-3.5" />
             Merge
           </Button>
-          <Button variant="outline" size="sm" className="gap-1.5 h-8 hidden lg:flex text-destructive hover:text-destructive">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8 hidden lg:flex text-destructive hover:text-destructive"
+            onClick={handleDeleteTicket}
+          >
             <Trash2 className="h-3.5 w-3.5" />
             Delete
           </Button>
@@ -421,15 +532,30 @@ export default function TicketDetail() {
                         <div className={`h-8 w-8 rounded-full ${getAvatarColor(user?.name || "A")} flex items-center justify-center flex-shrink-0 text-white font-medium text-sm`}>
                           {(user?.name || "A").charAt(0).toUpperCase()}
                         </div>
-                        <Button variant="outline" size="sm" className="gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => setIsReplyBoxOpen(!isReplyBoxOpen)}
+                        >
                           <Reply className="h-3.5 w-3.5" />
                           Reply
                         </Button>
-                        <Button variant="outline" size="sm" className="gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={handleAddNote}
+                        >
                           <FileText className="h-3.5 w-3.5" />
                           Add note
                         </Button>
-                        <Button variant="outline" size="sm" className="gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={handleForward}
+                        >
                           <Forward className="h-3.5 w-3.5" />
                           Forward
                         </Button>
@@ -441,91 +567,79 @@ export default function TicketDetail() {
             ))}
 
             {/* Expanded Reply Box with Rich Text Editor */}
-            <div className="border rounded-lg bg-card overflow-hidden">
-              <div className="p-3 border-b flex flex-wrap items-center gap-2 bg-muted/30">
-                <Button
-                  variant={!isInternal ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setIsInternal(false)}
-                >
-                  Reply
-                </Button>
-                <Button
-                  variant={isInternal ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setIsInternal(true)}
-                >
-                  <Lock className="mr-1 h-3 w-3" />
-                  Add note
-                </Button>
-                <div className="flex-1" />
-                <CannedResponsesDialog
-                  onSelect={handleCannedResponseSelect}
-                  trigger={
-                    <Button variant="outline" size="sm">
-                      <Zap className="mr-2 h-4 w-4" />
-                      Canned
-                    </Button>
-                  }
-                />
-                <AgentSignatureSettings
-                  agentId={user?.id}
-                  trigger={
-                    <Button variant="ghost" size="sm">
-                      {signature?.enabled ? "✓ Signature" : "Signature"}
-                    </Button>
-                  }
-                />
-              </div>
-
-              <RichTextEditor
-                content={replyContent}
-                onChange={setReplyContent}
-                placeholder={
-                  isInternal
-                    ? "Add an internal note (only visible to agents)..."
-                    : "Type your reply..."
-                }
-                className="border-0 rounded-none"
-                minHeight="120px"
-              />
-
-              {!isInternal && signature?.enabled && (
-                <div className="px-4 pb-2 border-t">
-                  <SignaturePreview signature={signature} />
+            {isReplyBoxOpen && (
+              <div className="border rounded-lg bg-card overflow-hidden">
+                <div className="p-3 border-b flex flex-wrap items-center gap-2 bg-muted/30">
+                  <Button
+                    variant={!isInternal ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setIsInternal(false)}
+                  >
+                    Reply
+                  </Button>
+                  <Button
+                    variant={isInternal ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setIsInternal(true)}
+                  >
+                    <Lock className="mr-1 h-3 w-3" />
+                    Add note
+                  </Button>
+                  <div className="flex-1" />
+                  <CannedResponsesDialog
+                    onSelect={handleCannedResponseSelect}
+                    trigger={
+                      <Button variant="outline" size="sm">
+                        <Zap className="mr-2 h-4 w-4" />
+                        Canned
+                      </Button>
+                    }
+                  />
+                  <AgentSignatureSettings
+                    agentId={user?.id}
+                    trigger={
+                      <Button variant="ghost" size="sm">
+                        {signature?.enabled ? "✓ Signature" : "Signature"}
+                      </Button>
+                    }
+                  />
                 </div>
-              )}
 
-              <div className="flex items-center justify-between p-3 border-t bg-muted/30">
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <Paperclip className="h-4 w-4" />
+                <RichTextEditor
+                  content={replyContent}
+                  onChange={setReplyContent}
+                  placeholder={
+                    isInternal
+                      ? "Add an internal note (only visible to agents)..."
+                      : "Type your reply..."
+                  }
+                  className="border-0 rounded-none"
+                  minHeight="120px"
+                />
+
+                {!isInternal && signature?.enabled && (
+                  <div className="px-4 pb-2 border-t">
+                    <SignaturePreview signature={signature} />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between p-3 border-t bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <Paperclip className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <Button onClick={handleReply}>
+                    <Send className="mr-2 h-4 w-4" />
+                    {isInternal ? "Add Note" : "Send"}
                   </Button>
                 </div>
-                <Button onClick={handleReply}>
-                  <Send className="mr-2 h-4 w-4" />
-                  {isInternal ? "Add Note" : "Send"}
-                </Button>
               </div>
-            </div>
+            )}
           </div>
         </ScrollArea>
 
-        {/* Right sidebar icons */}
-        <div className="hidden lg:flex flex-col items-center py-4 px-2 border-l bg-muted/20 gap-3">
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Settings className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Printer className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Timer className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Calendar className="h-4 w-4" />
-          </Button>
-        </div>
+
 
         {/* Properties sidebar */}
         <div className="w-72 xl:w-80 border-l bg-card flex-col hidden md:flex">
@@ -720,6 +834,22 @@ export default function TicketDetail() {
               Update
             </Button>
           </div>
+        </div>
+
+        {/* Right sidebar icons */}
+        <div className="hidden lg:flex flex-col items-center py-4 px-2 border-l bg-muted/20 gap-3">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleSettings}>
+            <Settings className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handlePrint}>
+            <Printer className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleTimer}>
+            <Timer className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCalendar}>
+            <Calendar className="h-4 w-4" />
+          </Button>
         </div>
       </div>
     </div>

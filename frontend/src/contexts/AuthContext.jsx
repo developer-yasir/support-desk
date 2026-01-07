@@ -56,10 +56,10 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async (email, password, name) => {
+  const register = async (data) => {
     try {
-      const data = await api.register(name, email, password);
-      const { user: userData, token } = data.data;
+      const res = await api.register(data);
+      const { user: userData, token } = res.data;
 
       const normalizedUser = { ...userData, role: normalizeRole(userData.role) };
 

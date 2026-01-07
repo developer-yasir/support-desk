@@ -35,7 +35,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { STATUSES, PRIORITIES, AGENTS } from "../data/mockData";
+import { STATUSES, PRIORITIES } from "../data/mockData";
 import TicketFiltersSidebar from "../components/TicketFiltersSidebar";
 import SavedViewsPanel from "../components/tickets/SavedViewsPanel";
 import BulkActionsBar from "../components/tickets/BulkActionsBar";
@@ -128,8 +128,8 @@ const StatusDropdown = ({ status, ticketId, onUpdate }) => {
   );
 };
 
-const AgentDropdown = ({ ticketId, agentId, customerName, onUpdate }) => {
-  const agent = AGENTS.find(a => a.id === agentId);
+const AgentDropdown = ({ ticketId, agentId, customerName, onUpdate, agents }) => {
+  const agent = agents.find(a => a._id === agentId);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -147,18 +147,18 @@ const AgentDropdown = ({ ticketId, agentId, customerName, onUpdate }) => {
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
-            onUpdate(ticketId, 'agent', null);
+            onUpdate(ticketId, 'assignedTo', null);
           }}
           className="cursor-pointer"
         >
           Unassigned
         </DropdownMenuItem>
-        {AGENTS.map((a) => (
+        {agents.map((a) => (
           <DropdownMenuItem
-            key={a.id}
+            key={a._id}
             onClick={(e) => {
               e.stopPropagation();
-              onUpdate(ticketId, 'agent', a.id);
+              onUpdate(ticketId, 'assignedTo', a._id);
             }}
             className="cursor-pointer"
           >
@@ -190,6 +190,7 @@ export default function Tickets() {
 
   const [search, setSearch] = useState(initialSearch);
   const [tickets, setTickets] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTickets, setSelectedTickets] = useState([]);
   const [showFilters, setShowFilters] = useState(true);
@@ -207,20 +208,24 @@ export default function Tickets() {
   const [activeViewId, setActiveViewId] = useState(null);
 
   useEffect(() => {
-    const fetchTickets = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const data = await api.getTickets();
-        // Backend returns { data: { tickets: [...] } }
-        setTickets(data.data.tickets);
+        const [ticketsData, agentsData] = await Promise.all([
+          api.getTickets(),
+          api.getAgents()
+        ]);
+
+        setTickets(ticketsData.data.tickets);
+        setAgents(agentsData.data.users);
       } catch (error) {
-        toast.error("Failed to fetch tickets: " + error.message);
+        toast.error("Failed to fetch data: " + error.message);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchTickets();
+    fetchData();
   }, []);
 
   // Calculate active filter count
@@ -352,17 +357,35 @@ export default function Tickets() {
     setSelectedTickets([]);
   };
 
-  const handleTicketQuickUpdate = (ticketId, field, value) => {
-    // In a real app, this would update the backend
-    const fieldLabels = { priority: 'Priority', status: 'Status', agent: 'Agent' };
-    const valueLabel = field === 'agent'
-      ? (value ? AGENTS.find(a => a.id === value)?.name : 'Unassigned')
-      : field === 'status'
-        ? STATUSES.find(s => s.id === value)?.label
-        : PRIORITIES.find(p => p.id === value)?.label;
+  const handleTicketQuickUpdate = async (ticketId, field, value) => {
+    try {
+      const updateData = { [field]: value };
 
-    toast.success(`${fieldLabels[field]} updated to "${valueLabel}" for ticket ${ticketId}`);
-    console.log(`Update ticket ${ticketId}: ${field} = ${value}`);
+      // Call API
+      const res = await api.updateTicket(ticketId, updateData);
+
+      // Update local state
+      setTickets(prev => prev.map(t =>
+        t._id === ticketId ? res.data.ticket : t
+      ));
+
+      const fieldLabels = { priority: 'Priority', status: 'Status', assignedTo: 'Agent' };
+
+      // Determine label for toast
+      let valueLabel = value;
+      if (field === 'assignedTo') {
+        valueLabel = value ? agents.find(a => a._id === value)?.name : 'Unassigned';
+      } else if (field === 'status') {
+        valueLabel = STATUSES.find(s => s.id === value)?.label;
+      } else if (field === 'priority') {
+        valueLabel = PRIORITIES.find(p => p.id === value)?.label;
+      }
+
+      toast.success(`${fieldLabels[field] || field} updated to "${valueLabel}"`);
+    } catch (error) {
+      console.error('Update failed:', error);
+      toast.error("Failed to update ticket: " + error.message);
+    }
   };
 
   return (
@@ -572,9 +595,10 @@ export default function Tickets() {
                       <div className="hidden lg:block">
                         <AgentDropdown
                           ticketId={ticket._id}
-                          agentId={ticket.assignedTo?._id}
+                          agentId={ticket.assignedTo?._id || ticket.assignedTo}
                           customerName={ticket.createdBy?.name}
                           onUpdate={handleTicketQuickUpdate}
+                          agents={agents}
                         />
                       </div>
 

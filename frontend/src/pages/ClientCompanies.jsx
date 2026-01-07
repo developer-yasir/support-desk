@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import CompanyTicketHistory from "@/components/CompanyTicketHistory";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search, Building2, Users, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,18 +38,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { COMPANIES as MOCK_COMPANIES, TICKETS, CONTACTS, STATUSES, PRIORITIES } from "@/data/mockData";
+import { api } from "@/lib/api";
 
 export default function ClientCompanies() {
   const { isManager } = useAuth();
   const navigate = useNavigate();
-  const [companies, setCompanies] = useState(
-    MOCK_COMPANIES.map((c) => ({
-      ...c,
-      status: "active",
-      createdAt: "2024-01-15",
-    }))
-  );
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
@@ -60,75 +56,77 @@ export default function ClientCompanies() {
     notes: "",
   });
 
-  // Get tickets for a company
-  const getCompanyTickets = (companyId) => {
-    return TICKETS.filter((ticket) => ticket.companyId === companyId);
+  useEffect(() => {
+    fetchCompanies();
+  }, []);
+
+  const fetchCompanies = async () => {
+    try {
+      const response = await api.getCompanies();
+      setCompanies(response.data.companies);
+    } catch (error) {
+      toast.error("Failed to fetch companies");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Get contacts for a company
-  const getCompanyContacts = (companyId) => {
-    return CONTACTS.filter((contact) => contact.companyId === companyId);
-  };
-
-  const getStatusBadge = (statusId) => {
-    const status = STATUSES.find((s) => s.id === statusId);
-    return status ? (
-      <Badge className={status.color}>{status.label}</Badge>
-    ) : null;
-  };
-
-  const getPriorityBadge = (priorityId) => {
-    const priority = PRIORITIES.find((p) => p.id === priorityId);
-    return priority ? (
-      <Badge variant="outline" className={priority.color}>
-        {priority.label}
+  const getStatusBadge = (status) => {
+    const styles = {
+      active: "bg-green-100 text-green-800 hover:bg-green-100",
+      inactive: "bg-gray-100 text-gray-800 hover:bg-gray-100"
+    };
+    return (
+      <Badge className={styles[status] || styles.active}>
+        {status || 'active'}
       </Badge>
-    ) : null;
+    );
   };
 
   const filteredCompanies = companies.filter(
     (company) =>
       company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      company.domain.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      company.industry.toLowerCase().includes(searchQuery.toLowerCase())
+      (company.domain && company.domain.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (company.industry && company.industry.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (editingCompany) {
-      setCompanies(
-        companies.map((c) =>
-          c.id === editingCompany.id ? { ...c, ...formData } : c
-        )
-      );
-      toast.success("Company updated successfully");
-    } else {
-      const newCompany = {
-        id: `comp-${companies.length + 1}`,
-        ...formData,
-        status: "active",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setCompanies([...companies, newCompany]);
-      toast.success("Company created successfully");
+    try {
+      if (editingCompany) {
+        await api.updateCompany(editingCompany._id, formData);
+        toast.success("Company updated successfully");
+      } else {
+        await api.createCompany(formData);
+        toast.success("Company created successfully");
+      }
+      fetchCompanies();
+      resetForm();
+    } catch (error) {
+      toast.error(error.message || "Operation failed");
     }
-    resetForm();
   };
 
   const handleEdit = (company) => {
     setEditingCompany(company);
     setFormData({
       name: company.name,
-      domain: company.domain,
-      industry: company.industry,
+      domain: company.domain || "",
+      industry: company.industry || "",
       notes: company.notes || "",
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (companyId) => {
-    setCompanies(companies.filter((c) => c.id !== companyId));
-    toast.success("Company deleted successfully");
+  const handleDelete = async (companyId) => {
+    if (!window.confirm("Are you sure you want to delete this company?")) return;
+    try {
+      await api.deleteCompany(companyId);
+      toast.success("Company deleted successfully");
+      fetchCompanies();
+    } catch (error) {
+      toast.error(error.message || "Failed to delete company");
+    }
   };
 
   const resetForm = () => {
@@ -140,6 +138,14 @@ export default function ClientCompanies() {
   const toggleExpanded = (companyId) => {
     setExpandedCompany(expandedCompany === companyId ? null : companyId);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -249,15 +255,13 @@ export default function ClientCompanies() {
         <CardContent>
           <div className="space-y-2">
             {filteredCompanies.map((company) => {
-              const companyTickets = getCompanyTickets(company.id);
-              const companyContacts = getCompanyContacts(company.id);
-              const isExpanded = expandedCompany === company.id;
+              const isExpanded = expandedCompany === company._id;
 
               return (
                 <Collapsible
-                  key={company.id}
+                  key={company._id}
                   open={isExpanded}
-                  onOpenChange={() => toggleExpanded(company.id)}
+                  onOpenChange={() => toggleExpanded(company._id)}
                 >
                   <div className="border rounded-lg">
                     <div className="flex items-center justify-between p-4">
@@ -281,14 +285,6 @@ export default function ClientCompanies() {
                           </p>
                         </div>
                         <div className="flex items-center gap-6 text-sm">
-                          <div className="flex items-center gap-1">
-                            <Users className="h-4 w-4 text-muted-foreground" />
-                            <span>{companyContacts.length} contacts</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Ticket className="h-4 w-4 text-muted-foreground" />
-                            <span>{companyTickets.length} tickets</span>
-                          </div>
                           <Badge
                             variant={company.status === "active" ? "default" : "secondary"}
                           >
@@ -309,7 +305,7 @@ export default function ClientCompanies() {
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => handleDelete(company.id)}
+                              onClick={() => handleDelete(company._id)}
                               className="text-destructive"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
@@ -322,51 +318,7 @@ export default function ClientCompanies() {
 
                     <CollapsibleContent>
                       <div className="border-t px-4 py-4 bg-muted/30">
-                        <h4 className="font-medium mb-3 flex items-center gap-2">
-                          <Ticket className="h-4 w-4" />
-                          Ticket History ({companyTickets.length})
-                        </h4>
-                        {companyTickets.length > 0 ? (
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Ticket</TableHead>
-                                <TableHead>Contact</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Priority</TableHead>
-                                <TableHead>Created</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {companyTickets.map((ticket) => (
-                                <TableRow
-                                  key={ticket.id}
-                                  className="cursor-pointer hover:bg-muted/50"
-                                  onClick={() => navigate(`/tickets/${ticket.id}`)}
-                                >
-                                  <TableCell>
-                                    <div>
-                                      <p className="font-medium">{ticket.id}</p>
-                                      <p className="text-sm text-muted-foreground truncate max-w-[200px]">
-                                        {ticket.subject}
-                                      </p>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>{ticket.customerName}</TableCell>
-                                  <TableCell>{getStatusBadge(ticket.status)}</TableCell>
-                                  <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
-                                  <TableCell className="text-muted-foreground">
-                                    {new Date(ticket.createdAt).toLocaleDateString()}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        ) : (
-                          <p className="text-sm text-muted-foreground py-4 text-center">
-                            No tickets found for this company
-                          </p>
-                        )}
+                        <CompanyTicketHistory companyName={company.name} />
                       </div>
                     </CollapsibleContent>
                   </div>

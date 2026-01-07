@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import ContactTicketHistory from "@/components/ContactTicketHistory";
 import { useNavigate } from "react-router-dom";
 import { Plus, Search, Mail, Building2, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,14 +45,14 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { CONTACTS as MOCK_CONTACTS, COMPANIES, TICKETS, STATUSES, PRIORITIES } from "@/data/mockData";
+import { api } from "@/lib/api";
 
 export default function Contacts() {
   const { isManager } = useAuth();
   const navigate = useNavigate();
-  const [contacts, setContacts] = useState(
-    MOCK_CONTACTS.map((c) => ({ ...c, status: "active" }))
-  );
+  const [contacts, setContacts] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -61,65 +62,83 @@ export default function Contacts() {
     name: "",
     email: "",
     phone: "",
-    companyId: "",
-    role: "",
+    company: "",
+    role: "customer",
+    jobTitle: "",
   });
 
-  // Get tickets for a contact
-  const getContactTickets = (contactId) => {
-    return TICKETS.filter((ticket) => ticket.customerId === contactId);
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      const [contactsRes, companiesRes] = await Promise.all([
+        api.getContacts(),
+        api.getCompanies()
+      ]);
+      setContacts(contactsRes.data.users);
+      setCompanies(companiesRes.data.companies);
+    } catch (error) {
+      toast.error("Failed to fetch data");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const getStatusBadge = (statusId) => {
-    const status = STATUSES.find((s) => s.id === statusId);
-    return status ? (
-      <Badge className={status.color}>{status.label}</Badge>
-    ) : null;
-  };
-
-  const getPriorityBadge = (priorityId) => {
-    const priority = PRIORITIES.find((p) => p.id === priorityId);
-    return priority ? (
-      <Badge variant="outline" className={priority.color}>
-        {priority.label}
+  const getStatusBadge = (status) => {
+    const styles = {
+      open: "bg-blue-100 text-blue-800",
+      in_progress: "bg-yellow-100 text-yellow-800",
+      resolved: "bg-green-100 text-green-800",
+      closed: "bg-gray-100 text-gray-800"
+    };
+    return (
+      <Badge className={styles[status] || styles.open}>
+        {status?.replace('_', ' ') || 'open'}
       </Badge>
-    ) : null;
+    );
+  };
+
+  const getPriorityBadge = (priority) => {
+    const styles = {
+      urgent: "text-red-600 border-red-600",
+      high: "text-orange-600 border-orange-600",
+      medium: "text-blue-600 border-blue-600",
+      low: "text-gray-600 border-gray-600"
+    };
+    return (
+      <Badge variant="outline" className={styles[priority] || styles.medium}>
+        {priority || 'medium'}
+      </Badge>
+    );
   };
 
   const filteredContacts = contacts.filter((contact) => {
     const matchesSearch =
       contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contact.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.companyName.toLowerCase().includes(searchQuery.toLowerCase());
+      (contact.company?.name || "").toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCompany =
-      companyFilter === "all" || contact.companyId === companyFilter;
+      companyFilter === "all" || contact.company?._id === companyFilter;
     return matchesSearch && matchesCompany;
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const company = COMPANIES.find((c) => c.id === formData.companyId);
-
-    if (editingContact) {
-      setContacts(
-        contacts.map((c) =>
-          c.id === editingContact.id
-            ? { ...c, ...formData, companyName: company?.name || "" }
-            : c
-        )
-      );
-      toast.success("Contact updated successfully");
-    } else {
-      const newContact = {
-        id: String(contacts.length + 10),
-        ...formData,
-        companyName: company?.name || "",
-        status: "active",
-      };
-      setContacts([...contacts, newContact]);
-      toast.success("Contact created successfully");
+    try {
+      if (editingContact) {
+        await api.updateContact(editingContact._id, formData);
+        toast.success("Contact updated successfully");
+      } else {
+        await api.createContact(formData);
+        toast.success("Contact created successfully");
+      }
+      fetchData();
+      resetForm();
+    } catch (error) {
+      toast.error(error.message || "Operation failed");
     }
-    resetForm();
   };
 
   const handleEdit = (contact) => {
@@ -127,20 +146,27 @@ export default function Contacts() {
     setFormData({
       name: contact.name,
       email: contact.email,
-      phone: contact.phone,
-      companyId: contact.companyId,
-      role: contact.role,
+      phone: contact.phone || "",
+      company: contact.company?._id || "",
+      role: contact.role || "customer",
+      jobTitle: contact.jobTitle || "",
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (contactId) => {
-    setContacts(contacts.filter((c) => c.id !== contactId));
-    toast.success("Contact deleted successfully");
+  const handleDelete = async (contactId) => {
+    if (!window.confirm("Are you sure you want to delete this contact?")) return;
+    try {
+      await api.deleteContact(contactId);
+      toast.success("Contact deleted successfully");
+      fetchData();
+    } catch (error) {
+      toast.error("Failed to delete contact");
+    }
   };
 
   const resetForm = () => {
-    setFormData({ name: "", email: "", phone: "", companyId: "", role: "" });
+    setFormData({ name: "", email: "", phone: "", company: "", role: "customer", jobTitle: "" });
     setEditingContact(null);
     setIsDialogOpen(false);
   };
@@ -157,6 +183,14 @@ export default function Contacts() {
   const toggleExpanded = (contactId) => {
     setExpandedContact(expandedContact === contactId ? null : contactId);
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -227,17 +261,17 @@ export default function Contacts() {
                   <div className="space-y-2">
                     <Label htmlFor="company">Company</Label>
                     <Select
-                      value={formData.companyId}
+                      value={formData.company}
                       onValueChange={(value) =>
-                        setFormData({ ...formData, companyId: value })
+                        setFormData({ ...formData, company: value })
                       }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select company" />
                       </SelectTrigger>
                       <SelectContent>
-                        {COMPANIES.map((company) => (
-                          <SelectItem key={company.id} value={company.id}>
+                        {companies.map((company) => (
+                          <SelectItem key={company._id} value={company._id}>
                             {company.name}
                           </SelectItem>
                         ))}
@@ -245,12 +279,12 @@ export default function Contacts() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="role">Role / Title</Label>
+                    <Label htmlFor="jobTitle">Job Title</Label>
                     <Input
-                      id="role"
-                      value={formData.role}
+                      id="jobTitle"
+                      value={formData.jobTitle}
                       onChange={(e) =>
-                        setFormData({ ...formData, role: e.target.value })
+                        setFormData({ ...formData, jobTitle: e.target.value })
                       }
                       placeholder="IT Manager"
                     />
@@ -288,8 +322,8 @@ export default function Contacts() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Companies</SelectItem>
-                {COMPANIES.map((company) => (
-                  <SelectItem key={company.id} value={company.id}>
+                {companies.map((company) => (
+                  <SelectItem key={company._id} value={company._id}>
                     {company.name}
                   </SelectItem>
                 ))}
@@ -300,14 +334,13 @@ export default function Contacts() {
         <CardContent>
           <div className="space-y-2">
             {filteredContacts.map((contact) => {
-              const contactTickets = getContactTickets(contact.id);
-              const isExpanded = expandedContact === contact.id;
+              const isExpanded = expandedContact === contact._id;
 
               return (
                 <Collapsible
-                  key={contact.id}
+                  key={contact._id}
                   open={isExpanded}
-                  onOpenChange={() => toggleExpanded(contact.id)}
+                  onOpenChange={() => toggleExpanded(contact._id)}
                 >
                   <div className="border rounded-lg">
                     <div className="flex items-center justify-between p-4">
@@ -333,23 +366,16 @@ export default function Contacts() {
                               <Mail className="h-3 w-3" />
                               {contact.email}
                             </span>
-                            <span className="flex items-center gap-1">
-                              <Building2 className="h-3 w-3" />
-                              {contact.companyName}
-                            </span>
+                            {contact.company && (
+                              <span className="flex items-center gap-1">
+                                <Building2 className="h-3 w-3" />
+                                {contact.company.name}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-4 text-sm">
-                          <span className="text-muted-foreground">{contact.role}</span>
-                          <div className="flex items-center gap-1">
-                            <Ticket className="h-4 w-4 text-muted-foreground" />
-                            <span>{contactTickets.length} tickets</span>
-                          </div>
-                          <Badge
-                            variant={contact.status === "active" ? "default" : "secondary"}
-                          >
-                            {contact.status}
-                          </Badge>
+                          <span className="text-muted-foreground">{contact.jobTitle || contact.role}</span>
                         </div>
                       </div>
                       {isManager && (
@@ -365,7 +391,7 @@ export default function Contacts() {
                               Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem
-                              onClick={() => handleDelete(contact.id)}
+                              onClick={() => handleDelete(contact._id)}
                               className="text-destructive"
                             >
                               <Trash2 className="h-4 w-4 mr-2" />
@@ -378,55 +404,7 @@ export default function Contacts() {
 
                     <CollapsibleContent>
                       <div className="border-t px-4 py-4 bg-muted/30">
-                        <h4 className="font-medium mb-3 flex items-center gap-2">
-                          <Ticket className="h-4 w-4" />
-                          Ticket History ({contactTickets.length})
-                        </h4>
-                        {contactTickets.length > 0 ? (
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Ticket</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Priority</TableHead>
-                                <TableHead>Agent</TableHead>
-                                <TableHead>Created</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {contactTickets.map((ticket) => (
-                                <TableRow
-                                  key={ticket.id}
-                                  className="cursor-pointer hover:bg-muted/50"
-                                  onClick={() => navigate(`/tickets/${ticket.id}`)}
-                                >
-                                  <TableCell>
-                                    <div>
-                                      <p className="font-medium">{ticket.id}</p>
-                                      <p className="text-sm text-muted-foreground truncate max-w-[250px]">
-                                        {ticket.subject}
-                                      </p>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>{getStatusBadge(ticket.status)}</TableCell>
-                                  <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
-                                  <TableCell>
-                                    {ticket.agentName || (
-                                      <span className="text-muted-foreground">Unassigned</span>
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-muted-foreground">
-                                    {new Date(ticket.createdAt).toLocaleDateString()}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        ) : (
-                          <p className="text-sm text-muted-foreground py-4 text-center">
-                            No tickets found for this contact
-                          </p>
-                        )}
+                        <ContactTicketHistory contactId={contact._id} />
                       </div>
                     </CollapsibleContent>
                   </div>

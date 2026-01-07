@@ -5,7 +5,23 @@ import User from '../models/User.model.js';
 // @access  Private (Admin/Manager)
 export const getUsers = async (req, res) => {
     try {
-        const users = await User.find().select('-password');
+        const { role, companyId } = req.query;
+        let query = {};
+
+        if (role) {
+            query.role = role;
+        }
+
+        // If manager, force query to their company
+        if (req.user.role === 'manager') {
+            query.company = req.user.company;
+        } else if (companyId) {
+            query.company = companyId;
+        }
+
+        const users = await User.find(query)
+            .select('-password')
+            .populate('company', 'name domain');
 
         res.status(200).json({
             status: 'success',
@@ -20,12 +36,52 @@ export const getUsers = async (req, res) => {
     }
 };
 
+// @desc    Create new user (admin/manager)
+// @route   POST /api/users
+// @access  Private (Admin/Manager)
+export const createUser = async (req, res) => {
+    try {
+        const { name, email, password, role, company, phone, jobTitle } = req.body;
+
+        const userExists = await User.findOne({ email });
+
+        if (userExists) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'User already exists'
+            });
+        }
+
+        const user = await User.create({
+            name,
+            email,
+            password: password || '123456', // Default password if not provided
+            role: role || 'customer',
+            company,
+            phone,
+            jobTitle
+        });
+
+        res.status(201).json({
+            status: 'success',
+            data: { user }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+};
+
 // @desc    Get single user
 // @route   GET /api/users/:id
 // @access  Private
 export const getUser = async (req, res) => {
     try {
-        const user = await User.findById(req.params.id).select('-password');
+        const user = await User.findById(req.params.id)
+            .select('-password')
+            .populate('company', 'name domain');
 
         if (!user) {
             return res.status(404).json({

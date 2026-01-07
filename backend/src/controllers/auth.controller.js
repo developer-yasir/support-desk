@@ -1,6 +1,7 @@
 import { validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.model.js';
+import Company from '../models/Company.model.js';
 
 // Generate JWT token
 const generateToken = (id) => {
@@ -22,7 +23,7 @@ export const register = async (req, res) => {
             });
         }
 
-        const { name, email, password, role } = req.body;
+        const { name, email, password, role, companyName, jobTitle, phone } = req.body;
 
         // Check if user exists
         const userExists = await User.findOne({ email });
@@ -33,12 +34,41 @@ export const register = async (req, res) => {
             });
         }
 
+        let companyId = undefined;
+
+        // If registering as manager, create the company
+        if (role === 'manager') {
+            if (!companyName) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Company name is required for managers'
+                });
+            }
+
+            // Check if company exists
+            const companyExists = await Company.findOne({ name: companyName });
+            if (companyExists) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Company already exists'
+                });
+            }
+
+            const newCompany = await Company.create({
+                name: companyName
+            });
+            companyId = newCompany._id;
+        }
+
         // Create user
         const user = await User.create({
             name,
             email,
             password,
-            role: role || 'customer'
+            role: role || 'customer',
+            company: companyId,
+            jobTitle,
+            phone
         });
 
         // Generate token

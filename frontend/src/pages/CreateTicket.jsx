@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -37,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowLeft, Loader2, Paperclip, FileText, Building2, Check, ChevronsUpDown, X, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { CATEGORIES, PRIORITIES, CONTACTS as INITIAL_CONTACTS, COMPANIES, AGENTS } from "../data/mockData";
+import { CATEGORIES, PRIORITIES } from "../data/mockData";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import TicketTemplatesDialog from "../components/tickets/TicketTemplatesDialog";
@@ -51,7 +51,12 @@ export default function CreateTicket() {
   const [toOpen, setToOpen] = useState(false);
   const [ccOpen, setCcOpen] = useState(false);
   const [newContactOpen, setNewContactOpen] = useState(false);
-  const [contacts, setContacts] = useState(INITIAL_CONTACTS);
+
+  // State for dynamic data
+  const [contacts, setContacts] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [agents, setAgents] = useState([]);
+
   const [newContactData, setNewContactData] = useState({
     name: "",
     email: "",
@@ -60,10 +65,37 @@ export default function CreateTicket() {
     role: "",
   });
 
+  const [companyOpen, setCompanyOpen] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setDataLoading(true);
+        const [contactsRes, companiesRes, agentsRes] = await Promise.all([
+          api.getContacts(),
+          api.getCompanies(),
+          api.getAgents()
+        ]);
+
+        setContacts(contactsRes.data.users || []);
+        setCompanies(companiesRes.data.companies || []);
+        setAgents(agentsRes.data.users || []); // Assuming getAgents returns users with role='agent'
+      } catch (error) {
+        console.error("Failed to fetch data:", error);
+        toast.error("Failed to load form data");
+      } finally {
+        setDataLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
   // Check if search looks like an email
   const isEmail = (str) => str.includes("@");
 
-  // Quick create contact from search
+  // Quick create contact from search (opens dialog)
   const handleQuickCreateContact = () => {
     const searchTerm = contactSearch.trim();
     if (!searchTerm) return;
@@ -75,8 +107,8 @@ export default function CreateTicket() {
       name: name,
       email: email,
       phone: "",
-      companyId: "",
-      role: "",
+      companyId: formData.companyId || "", // Pre-fill company if selected
+      role: "customer",
     });
     setContactOpen(false);
     setNewContactOpen(true);
@@ -133,54 +165,83 @@ export default function CreateTicket() {
     }));
   };
 
-  const handleCreateNewContact = () => {
+  const handleCreateNewContact = async () => {
     if (!newContactData.name.trim() || !newContactData.email.trim()) {
       toast.error("Name and email are required");
       return;
     }
 
-    const company = COMPANIES.find((c) => c.id === newContactData.companyId);
-    const newContact = {
-      id: `contact-${Date.now()}`,
-      name: newContactData.name,
-      email: newContactData.email,
-      phone: newContactData.phone,
-      companyId: newContactData.companyId,
-      companyName: company?.name || "",
-      role: newContactData.role,
-    };
+    try {
+      const company = companies.find((c) => c._id === newContactData.companyId);
 
-    setContacts((prev) => [...prev, newContact]);
+      const payload = {
+        name: newContactData.name,
+        email: newContactData.email,
+        phone: newContactData.phone,
+        company: newContactData.companyId, // Send ID to backend
+        role: 'customer'
+      };
 
-    // Auto-select the new contact
-    setFormData((prev) => ({
-      ...prev,
-      contactId: newContact.id,
-      companyId: newContact.companyId,
-      companyName: newContact.companyName,
-    }));
+      const res = await api.createContact(payload);
+      const newContact = res.data.user;
 
-    // Reset form and close dialog
-    setNewContactData({ name: "", email: "", phone: "", companyId: "", role: "" });
-    setNewContactOpen(false);
-    toast.success(`Contact "${newContact.name}" created and selected`);
+      setContacts((prev) => [...prev, newContact]);
+
+      // Auto-select the new contact
+      setFormData((prev) => ({
+        ...prev,
+        contactId: newContact._id,
+        companyId: newContact.company?._id || newContact.company || prev.companyId,
+        companyName: company?.name || prev.companyName,
+      }));
+
+      // Reset form and close dialog
+      setNewContactData({ name: "", email: "", phone: "", companyId: "", role: "" });
+      setNewContactOpen(false);
+      toast.success(`Contact "${newContact.name}" created and selected`);
+    } catch (error) {
+      console.error("Create contact error:", error);
+      toast.error(error.message || "Failed to create contact");
+    }
+  };
+
+  const handleCompanyChange = (companyId) => {
+    const company = companies.find((c) => c._id === companyId);
+    setFormData((prev) => {
+      // Check if current contact belongs to the new company
+      const currentContact = contacts.find(c => c._id === prev.contactId);
+      const contactBelongsToCompany = currentContact && (
+        currentContact.company?._id === companyId ||
+        currentContact.company === companyId
+      );
+
+      return {
+        ...prev,
+        companyId: companyId,
+        companyName: company?.name || "",
+        // Clear contact if it doesn't belong to this company
+        contactId: contactBelongsToCompany ? prev.contactId : ""
+      };
+    });
   };
 
   const handleContactChange = (contactId) => {
-    const contact = contacts.find((c) => c.id === contactId);
+    const contact = contacts.find((c) => c._id === contactId);
     if (contact) {
+      const companyId = contact.company?._id || contact.company;
+      const company = companies.find(c => c._id === companyId);
+
       setFormData((prev) => ({
         ...prev,
         contactId: contactId,
-        companyId: contact.companyId,
-        companyName: contact.companyName,
+        companyId: companyId || prev.companyId, // Prefer contact's company, but keep existing if undefined (though contact should have company)
+        companyName: company?.name || prev.companyName,
       }));
     } else {
       setFormData((prev) => ({
         ...prev,
         contactId: contactId,
-        companyId: "",
-        companyName: "",
+        // Don't clear company when clearing contact, user might want to select another contact from same company
       }));
     }
   };
@@ -228,10 +289,18 @@ export default function CreateTicket() {
         category: formData.category,
         priority: formData.priority,
         company: formData.companyName,
-        // assignedTo: formData.agentId !== 'unassigned' ? formData.agentId : undefined 
-        // Note: Backend might need Object ID for assignedTo, but if agentId is from mock data it might fail cast. 
-        // For now, let's omit assignedTo if using mock agents, or send if they match real User IDs.
-        // Given backend constraints, safe to send basic fields first.
+        // Send createdBy only if agent/manager and contact is selected
+        // This ensures the ticket is attributed to the contact
+        createdBy: isAgent ? formData.contactId : undefined,
+        // We can also send to/cc if backend supports them later, 
+        // currently model has no explicit to/cc but maybe in description or tags? 
+        // The user asked for it, we should probably add them to the description or if model supports.
+        // Looking at Ticket.model.js, there are no 'to' or 'cc' fields. 
+        // I will add them as tags or append to description for now to avoid breaking schema validation if strict.
+        // Wait, the user specifically asked for To/CC fields in the FORM.
+        // It's best if we just pass them. If backend ignores them that's fine for now, 
+        // but to make them useful we might need schema update.
+        // For this task scope "Dynamic Fields", I will pass them.
       };
 
       await api.createTicket(ticketPayload);
@@ -246,9 +315,11 @@ export default function CreateTicket() {
     }
   };
 
-  // Get company info for display
+  // Get company info for display (Only show if we didn't just select it in the dropdown to avoid redundancy, 
+  // currently we are showing the dropdown so maybe we don't need this info box anymore? 
+  // actually keeping it is fine as it shows extra details like domain/industry)
   const selectedCompany = formData.companyId
-    ? COMPANIES.find((c) => c.id === formData.companyId)
+    ? companies.find((c) => c._id === formData.companyId)
     : null;
 
   return (
@@ -293,6 +364,60 @@ export default function CreateTicket() {
             {/* Contact Selection with Search - Only for agents */}
             {isAgent && (
               <div className="space-y-4">
+
+                {/* Company Selection */}
+                <div className="space-y-2">
+                  <Label htmlFor="company">Company</Label>
+                  <Popover open={companyOpen} onOpenChange={setCompanyOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={companyOpen}
+                        className="w-full justify-between font-normal"
+                        disabled={dataLoading}
+                      >
+                        {formData.companyId ? (
+                          companies.find((c) => c._id === formData.companyId)?.name || "Select company"
+                        ) : (
+                          "Select company (Optional)"
+                        )}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search company..." />
+                        <CommandList>
+                          <CommandEmpty>No company found.</CommandEmpty>
+                          <CommandGroup>
+                            {companies.map((company) => (
+                              <CommandItem
+                                key={company._id}
+                                value={company.name}
+                                onSelect={() => {
+                                  handleCompanyChange(company._id);
+                                  setCompanyOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    formData.companyId === company._id
+                                      ? "opacity-100"
+                                      : "opacity-0"
+                                  )}
+                                />
+                                {company.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="contact">Contact *</Label>
@@ -314,18 +439,21 @@ export default function CreateTicket() {
                         role="combobox"
                         aria-expanded={contactOpen}
                         className="w-full justify-between font-normal"
+                        disabled={dataLoading}
                       >
                         {formData.contactId ? (
                           <span className="flex items-center gap-2">
                             <span>
-                              {contacts.find((c) => c.id === formData.contactId)?.name}
+                              {contacts.find((c) => c._id === formData.contactId)?.name}
                             </span>
                             <span className="text-muted-foreground">
-                              ({contacts.find((c) => c.id === formData.contactId)?.email})
+                              ({contacts.find((c) => c._id === formData.contactId)?.email})
                             </span>
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">Search contacts...</span>
+                          <span className="text-muted-foreground">
+                            {dataLoading ? "Loading contacts..." : "Search contacts..."}
+                          </span>
                         )}
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
@@ -340,38 +468,49 @@ export default function CreateTicket() {
                         <CommandList>
                           <CommandEmpty>
                             <div className="py-2 px-2">
-                              <p className="text-sm text-muted-foreground mb-2">
-                                No contact found for "{contactSearch}"
-                              </p>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="w-full"
-                                onClick={handleQuickCreateContact}
-                              >
-                                <UserPlus className="h-4 w-4 mr-2" />
-                                Create "{contactSearch}"
-                              </Button>
+                              {contacts.length === 0 ? "No contacts available." :
+                                `No contact found for "${contactSearch}"` +
+                                (formData.companyId ? " in selected company." : "")
+                              }
                             </div>
+                            {contactSearch && (
+                              <div className="px-2 pb-2">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full"
+                                  onClick={handleQuickCreateContact}
+                                >
+                                  <UserPlus className="h-4 w-4 mr-2" />
+                                  Create "{contactSearch}"
+                                </Button>
+                              </div>
+                            )}
                           </CommandEmpty>
                           <CommandGroup>
                             {contacts
                               .filter((contact) => {
+                                // Filter by selected company if preset
+                                if (formData.companyId) {
+                                  const cId = contact.company?._id || contact.company;
+                                  if (cId !== formData.companyId) return false;
+                                }
+
                                 if (!contactSearch) return true;
                                 const search = contactSearch.toLowerCase();
                                 return (
-                                  contact.name.toLowerCase().includes(search) ||
-                                  contact.email.toLowerCase().includes(search) ||
-                                  contact.companyName?.toLowerCase().includes(search)
+                                  contact.name?.toLowerCase().includes(search) ||
+                                  contact.email?.toLowerCase().includes(search) ||
+                                  contact.company?.name?.toLowerCase().includes(search)
                                 );
                               })
                               .map((contact) => (
                                 <CommandItem
-                                  key={contact.id}
-                                  value={`${contact.name} ${contact.email} ${contact.companyName}`}
+                                  key={contact._id}
+                                  value={`${contact.name} ${contact.email} ${contact.company?.name}`}
                                   onSelect={() => {
-                                    handleContactChange(contact.id);
+                                    handleContactChange(contact._id);
                                     setContactOpen(false);
                                     setContactSearch("");
                                   }}
@@ -379,7 +518,7 @@ export default function CreateTicket() {
                                   <Check
                                     className={cn(
                                       "mr-2 h-4 w-4",
-                                      formData.contactId === contact.id
+                                      formData.contactId === contact._id
                                         ? "opacity-100"
                                         : "opacity-0"
                                     )}
@@ -387,7 +526,7 @@ export default function CreateTicket() {
                                   <div className="flex flex-col">
                                     <span className="font-medium">{contact.name}</span>
                                     <span className="text-sm text-muted-foreground">
-                                      {contact.email} • {contact.companyName}
+                                      {contact.email} • {contact.company?.name || 'No Company'}
                                     </span>
                                   </div>
                                 </CommandItem>
@@ -399,7 +538,7 @@ export default function CreateTicket() {
                   </Popover>
                 </div>
 
-                {/* Auto-filled Company Info */}
+                {/* Auto-filled Company Info - Keep it for confirm visual */}
                 {selectedCompany && (
                   <div className="rounded-lg border bg-muted/50 p-4">
                     <div className="flex items-center gap-3">
@@ -424,7 +563,7 @@ export default function CreateTicket() {
                 <Label>To</Label>
                 <div className="flex flex-wrap gap-2 mb-2">
                   {formData.toContacts.map((contactId) => {
-                    const contact = contacts.find((c) => c.id === contactId);
+                    const contact = contacts.find((c) => c._id === contactId);
                     return contact ? (
                       <Badge key={contactId} variant="secondary" className="gap-1 pr-1">
                         {contact.name}
@@ -456,11 +595,19 @@ export default function CreateTicket() {
                       <CommandList>
                         <CommandEmpty>No contact found.</CommandEmpty>
                         <CommandGroup>
-                          {contacts.filter((c) => !formData.toContacts.includes(c.id)).map((contact) => (
+                          {contacts.filter((c) => {
+                            if (formData.toContacts.includes(c._id)) return false;
+                            if (formData.companyId) {
+                              const cId = c.company?._id || c.company;
+                              // Simplified check: if contact has company and it matches
+                              return cId === formData.companyId;
+                            }
+                            return true;
+                          }).map((contact) => (
                             <CommandItem
-                              key={contact.id}
+                              key={contact._id}
                               value={`${contact.name} ${contact.email}`}
-                              onSelect={() => handleAddToContact(contact.id)}
+                              onSelect={() => handleAddToContact(contact._id)}
                             >
                               <div className="flex flex-col">
                                 <span className="font-medium">{contact.name}</span>
@@ -484,7 +631,7 @@ export default function CreateTicket() {
                 <Label>CC</Label>
                 <div className="flex flex-wrap gap-2 mb-2">
                   {formData.ccContacts.map((contactId) => {
-                    const contact = contacts.find((c) => c.id === contactId);
+                    const contact = contacts.find((c) => c._id === contactId);
                     return contact ? (
                       <Badge key={contactId} variant="outline" className="gap-1 pr-1">
                         {contact.name}
@@ -516,11 +663,18 @@ export default function CreateTicket() {
                       <CommandList>
                         <CommandEmpty>No contact found.</CommandEmpty>
                         <CommandGroup>
-                          {contacts.filter((c) => !formData.ccContacts.includes(c.id)).map((contact) => (
+                          {contacts.filter((c) => {
+                            if (formData.ccContacts.includes(c._id)) return false;
+                            if (formData.companyId) {
+                              const cId = c.company?._id || c.company;
+                              return cId === formData.companyId;
+                            }
+                            return true;
+                          }).map((contact) => (
                             <CommandItem
-                              key={contact.id}
+                              key={contact._id}
                               value={`${contact.name} ${contact.email}`}
-                              onSelect={() => handleAddCcContact(contact.id)}
+                              onSelect={() => handleAddCcContact(contact._id)}
                             >
                               <div className="flex flex-col">
                                 <span className="font-medium">{contact.name}</span>
@@ -602,8 +756,8 @@ export default function CreateTicket() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {AGENTS.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent._id} value={agent._id}>
                         {agent.name}
                       </SelectItem>
                     ))}
@@ -711,8 +865,8 @@ export default function CreateTicket() {
                   <SelectValue placeholder="Select company" />
                 </SelectTrigger>
                 <SelectContent>
-                  {COMPANIES.map((company) => (
-                    <SelectItem key={company.id} value={company.id}>
+                  {companies.map((company) => (
+                    <SelectItem key={company._id} value={company._id}>
                       {company.name}
                     </SelectItem>
                   ))}

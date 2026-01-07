@@ -8,6 +8,8 @@ import { connectDB } from './config/database.js';
 import authRoutes from './routes/auth.routes.js';
 import ticketRoutes from './routes/ticket.routes.js';
 import userRoutes from './routes/user.routes.js';
+import companyRoutes from './routes/company.routes.js';
+import reportRoutes from './routes/report.routes.js';
 
 // Load environment variables
 dotenv.config();
@@ -31,6 +33,8 @@ app.use(morgan('dev'));
 app.use('/api/auth', authRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/companies', companyRoutes);
+app.use('/api/reports', reportRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

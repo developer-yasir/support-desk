@@ -73,12 +73,38 @@ export default function Login() {
 
             {/* Demo credentials */}
             <div className="rounded-lg bg-accent p-3 text-sm">
-              <p className="font-medium mb-2">Demo Accounts:</p>
-              <div className="space-y-1 text-muted-foreground">
-                <p>Super Admin: superadmin@workdesks.com / super123</p>
-                <p>Manager: manager@workdesks.com / manager123</p>
-                <p>Agent: agent@workdesks.com / agent123</p>
+              <p className="font-medium mb-2">Demo Accounts (Click to fill):</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full text-xs justify-start h-auto py-2"
+                  onClick={() => {
+                    setEmail("manager@test.com");
+                    setPassword("password123");
+                  }}
+                >
+                  <div className="flex flex-col items-start">
+                    <span className="font-semibold">Manager</span>
+                    <span className="text-muted-foreground font-normal">manager@test.com</span>
+                  </div>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full text-xs justify-start h-auto py-2"
+                  onClick={() => {
+                    setEmail("agent@test.com");
+                    setPassword("password123");
+                  }}
+                >
+                  <div className="flex flex-col items-start">
+                    <span className="font-semibold">Agent</span>
+                    <span className="text-muted-foreground font-normal">agent@test.com</span>
+                  </div>
+                </Button>
               </div>
+              <p className="text-xs text-muted-foreground mt-2 text-center">Password: password123</p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
