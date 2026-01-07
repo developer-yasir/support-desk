@@ -4,7 +4,8 @@ import {
     getTicket,
     createTicket,
     updateTicket,
-    deleteTicket
+    deleteTicket,
+    addComment
 } from '../controllers/ticket.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 
@@ -37,5 +38,10 @@ router.put('/:id', updateTicket);
 // @desc    Delete ticket
 // @access  Private
 router.delete('/:id', deleteTicket);
+
+// @route   POST /api/tickets/:id/comments
+// @desc    Add comment to ticket
+// @access  Private
+router.post('/:id/comments', addComment);
 
 export default router;

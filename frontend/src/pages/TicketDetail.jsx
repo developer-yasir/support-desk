@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -50,7 +51,7 @@ import { useAgentSignature, AgentSignatureSettings, SignaturePreview } from "../
 const getAvatarColor = (name) => {
   const colors = [
     "bg-orange-400",
-    "bg-teal-400", 
+    "bg-teal-400",
     "bg-pink-400",
     "bg-purple-400",
     "bg-blue-400",
@@ -70,7 +71,7 @@ const PriorityIndicator = ({ priority }) => {
     urgent: { color: "bg-red-500", label: "Urgent" },
   };
   const { color, label } = config[priority] || config.low;
-  
+
   return (
     <div className="flex items-center gap-2">
       <span className={`h-2.5 w-2.5 rounded-sm ${color}`} />
@@ -95,7 +96,48 @@ export default function TicketDetail() {
 
   const { signature, appendSignature } = useAgentSignature(user?.id);
 
-  const ticket = TICKETS.find((t) => t.id === id);
+  const [ticket, setTicket] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchTicket = async () => {
+      try {
+        setLoading(true);
+        const data = await api.getTicket(id);
+        const fetchedTicket = data.data.ticket;
+
+        // Map backend fields to frontend expected structure
+        // Specifically map 'comments' to 'messages' if messages doesn't exist
+        if (!fetchedTicket.messages && fetchedTicket.comments) {
+          fetchedTicket.messages = fetchedTicket.comments.map(c => ({
+            id: c._id,
+            content: c.message,
+            author: c.user?.name || "Unknown",
+            authorId: c.user?._id,
+            isInternal: c.isInternal,
+            createdAt: c.createdAt
+          }));
+        }
+
+        // Ensure messages array exists
+        fetchedTicket.messages = fetchedTicket.messages || [];
+
+        // Map common backend fields to frontend expected props
+        fetchedTicket.slaDeadline = fetchedTicket.dueDate || fetchedTicket.createdAt || new Date().toISOString();
+        fetchedTicket.id = fetchedTicket._id;
+
+        setTicket(fetchedTicket);
+      } catch (err) {
+        setError(err.message);
+        toast.error("Failed to load ticket");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTicket();
+  }, [id]);
 
   // Controlled state for quick action dropdowns
   const [ticketStatus, setTicketStatus] = useState(ticket?.status || "open");
@@ -111,10 +153,15 @@ export default function TicketDetail() {
     if (ticket) {
       setTicketStatus(ticket.status);
       setTicketPriority(ticket.priority);
-      setTicketAgent(ticket.agentId || "unassigned");
+      setTicketAgent(ticket.assignedTo?._id || "unassigned");
       setTicketCategory(ticket.category || "");
+      if (ticket.company) setTicketCompany(ticket.company);
     }
   }, [ticket]);
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-full">Loading...</div>;
+  }
 
   if (!ticket) {
     return (
@@ -130,7 +177,7 @@ export default function TicketDetail() {
     );
   }
 
-  const handleReply = () => {
+  const handleReply = async () => {
     // Strip HTML tags to check if content is empty
     const textContent = replyContent.replace(/<[^>]*>/g, "").trim();
     if (!textContent) {
@@ -138,13 +185,43 @@ export default function TicketDetail() {
       return;
     }
 
-    const finalContent = !isInternal && signature?.enabled
-      ? `${replyContent}<br/><br/>${signature.content}`
-      : replyContent;
+    try {
+      // Append signature if enabled
+      const finalMessage = appendSignature(replyContent);
 
-    console.log("Sending reply:", finalContent);
-    toast.success(isInternal ? "Internal note added" : "Reply sent successfully");
-    setReplyContent("");
+      const payload = {
+        message: finalMessage,
+        isInternal: isInternal
+      };
+
+      await api.addComment(id, payload);
+
+      toast.success("Reply sent successfully");
+      setReplyContent("");
+
+      // Refresh ticket data to show new comment
+      const data = await api.getTicket(id);
+      const fetchedTicket = data.data.ticket;
+
+      fetchedTicket.messages = fetchedTicket.comments?.map(c => ({
+        id: c._id,
+        content: c.message,
+        author: c.user?.name || "Unknown",
+        authorId: c.user?._id,
+        isInternal: c.isInternal,
+        createdAt: c.createdAt
+      })) || [];
+
+      // Ensure other fields are preserved or updated
+      fetchedTicket.slaDeadline = fetchedTicket.dueDate || fetchedTicket.createdAt;
+      fetchedTicket.id = fetchedTicket._id;
+
+      setTicket(fetchedTicket);
+
+    } catch (error) {
+      console.error("Failed to send reply:", error);
+      toast.error("Failed to send reply");
+    }
     setIsInternal(false);
   };
 
@@ -162,7 +239,7 @@ export default function TicketDetail() {
     ticket.status !== "resolved" &&
     ticket.status !== "closed";
 
-  const ticketNumber = ticket.id.replace("TKT-", "");
+  const ticketNumber = ticket.ticketNumber || ticket._id?.slice(-6);
 
   return (
     <div className="flex flex-col h-full -m-4 md:-m-6">
@@ -226,9 +303,9 @@ export default function TicketDetail() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <Button 
-            variant={showActivities ? "default" : "outline"} 
-            size="sm" 
+          <Button
+            variant={showActivities ? "default" : "outline"}
+            size="sm"
             className="gap-1.5 h-8"
             onClick={() => setShowActivities(!showActivities)}
           >
@@ -275,13 +352,13 @@ export default function TicketDetail() {
                     Internal Note - Only visible to agents
                   </div>
                 )}
-                
+
                 <div className={`flex gap-3 ${message.isInternal ? "bg-yellow-50/50 dark:bg-yellow-900/10 -mx-4 px-4 py-3 rounded-lg border border-yellow-200/50 dark:border-yellow-800/50" : ""}`}>
                   {/* Avatar */}
                   <div className={`h-9 w-9 rounded-full ${getAvatarColor(message.author)} flex items-center justify-center flex-shrink-0 text-white font-medium text-sm`}>
                     {message.author.charAt(0).toUpperCase()}
                   </div>
-                  
+
                   {/* Message content */}
                   <div className="flex-1 min-w-0">
                     {/* Author info */}
@@ -296,7 +373,7 @@ export default function TicketDetail() {
                         {formatDistanceToNow(new Date(message.createdAt), { addSuffix: false })} ago
                         <span className="hidden sm:inline"> ({format(new Date(message.createdAt), "EEE, d MMM yyyy 'at' h:mm a")})</span>
                       </span>
-                      
+
                       {/* Action buttons */}
                       <div className="ml-auto flex gap-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7">
@@ -307,7 +384,7 @@ export default function TicketDetail() {
                         </Button>
                       </div>
                     </div>
-                    
+
                     {/* Email recipients */}
                     {index === 0 && (
                       <div className="text-sm text-muted-foreground mb-3 space-y-1">
@@ -319,27 +396,25 @@ export default function TicketDetail() {
                         </div>
                       </div>
                     )}
-                    
+
                     {/* Message body */}
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <p className="whitespace-pre-wrap">{message.content}</p>
-                    </div>
-                    
+                    <div
+                      className="prose prose-sm dark:prose-invert max-w-none"
+                      dangerouslySetInnerHTML={{ __html: message.content }}
+                    />
+
                     {/* Attachments */}
-                    {index === 0 && (
+                    {/* Attachments - TODO: Implement real attachments */}
+                    {message.attachments && message.attachments.length > 0 && (
                       <div className="mt-4 flex flex-wrap gap-2">
-                        <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border">
-                          <div className="h-8 w-8 bg-green-100 dark:bg-green-900/30 rounded flex items-center justify-center">
-                            <span className="text-xs font-medium text-green-700 dark:text-green-400">XLSX</span>
+                        {message.attachments.map((att, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border">
+                            <span className="text-sm">{att.filename || "Attachment"}</span>
                           </div>
-                          <div>
-                            <p className="text-sm font-medium">Report_Data.xlsx</p>
-                            <p className="text-xs text-muted-foreground">2.47 MB</p>
-                          </div>
-                        </div>
+                        ))}
                       </div>
                     )}
-                    
+
                     {/* Reply actions at bottom of each message */}
                     {index === ticket.messages.length - 1 && (
                       <div className="flex items-center gap-2 mt-4 pt-4 border-t">
@@ -402,7 +477,7 @@ export default function TicketDetail() {
                   }
                 />
               </div>
-              
+
               <RichTextEditor
                 content={replyContent}
                 onChange={setReplyContent}

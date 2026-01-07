@@ -3,8 +3,7 @@ import mongoose from 'mongoose';
 const ticketSchema = new mongoose.Schema({
     ticketNumber: {
         type: String,
-        unique: true,
-        required: true
+        unique: true
     },
     subject: {
         type: String,

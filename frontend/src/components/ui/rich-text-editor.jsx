@@ -235,23 +235,25 @@ export function RichTextEditor({
   editorClassName,
   minHeight = "150px",
 }) {
+  const extensions = React.useMemo(() => [
+    StarterKit.configure({
+      heading: false,
+    }),
+    Underline,
+    Link.configure({
+      openOnClick: false,
+      HTMLAttributes: {
+        class: "text-primary underline cursor-pointer",
+      },
+    }),
+    Placeholder.configure({
+      placeholder,
+      emptyEditorClass: "is-editor-empty",
+    }),
+  ], [placeholder]);
+
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: false,
-      }),
-      Underline,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: "text-primary underline cursor-pointer",
-        },
-      }),
-      Placeholder.configure({
-        placeholder,
-        emptyEditorClass: "is-editor-empty",
-      }),
-    ],
+    extensions,
     content,
     onUpdate: ({ editor }) => {
       onChange?.(editor.getHTML());
@@ -307,23 +309,25 @@ export function useRichTextEditor({
   content = "",
   placeholder = "Write something...",
 }) {
+  const extensions = React.useMemo(() => [
+    StarterKit.configure({
+      heading: false,
+    }),
+    Underline,
+    Link.configure({
+      openOnClick: false,
+      HTMLAttributes: {
+        class: "text-primary underline cursor-pointer",
+      },
+    }),
+    Placeholder.configure({
+      placeholder,
+      emptyEditorClass: "is-editor-empty",
+    }),
+  ], [placeholder]);
+
   const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        heading: false,
-      }),
-      Underline,
-      Link.configure({
-        openOnClick: false,
-        HTMLAttributes: {
-          class: "text-primary underline cursor-pointer",
-        },
-      }),
-      Placeholder.configure({
-        placeholder,
-        emptyEditorClass: "is-editor-empty",
-      }),
-    ],
+    extensions,
     content,
   });
 

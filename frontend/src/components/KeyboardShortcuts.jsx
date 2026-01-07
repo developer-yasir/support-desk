@@ -4,10 +4,10 @@ import { toast } from "sonner";
 
 // Keyboard shortcut definitions
 const SHORTCUTS = [
-  { key: "n", ctrl: true, description: "New ticket", action: "newTicket" },
-  { key: "t", ctrl: true, description: "Go to tickets", action: "goTickets" },
-  { key: "d", ctrl: true, description: "Go to dashboard", action: "goDashboard" },
-  { key: "r", ctrl: true, description: "Go to reports", action: "goReports" },
+  { key: "n", alt: true, description: "New ticket", action: "newTicket" },
+  { key: "t", alt: true, description: "Go to tickets", action: "goTickets" },
+  { key: "d", alt: true, description: "Go to dashboard", action: "goDashboard" },
+  { key: "r", alt: true, description: "Go to reports", action: "goReports" },
   { key: "/", ctrl: false, description: "Focus search", action: "focusSearch" },
   { key: "?", ctrl: false, shift: true, description: "Show shortcuts", action: "showHelp" },
   { key: "Escape", ctrl: false, description: "Close modal/dialog", action: "escape" },
@@ -33,11 +33,12 @@ export function useKeyboardShortcuts(options = {}) {
       const allShortcuts = [...SHORTCUTS, ...customShortcuts];
 
       for (const shortcut of allShortcuts) {
-        const ctrlMatch = shortcut.ctrl ? event.ctrlKey || event.metaKey : !event.ctrlKey && !event.metaKey;
+        const ctrlMatch = shortcut.ctrl ? event.ctrlKey || event.metaKey : !shortcut.ctrl; // Only check ctrl if required
+        const altMatch = shortcut.alt ? event.altKey : !event.altKey;
         const shiftMatch = shortcut.shift ? event.shiftKey : !event.shiftKey || shortcut.key === "?";
         const keyMatch = event.key.toLowerCase() === shortcut.key.toLowerCase();
 
-        if (ctrlMatch && keyMatch && (shortcut.shift ? event.shiftKey : true)) {
+        if (ctrlMatch && altMatch && keyMatch && (shortcut.shift ? event.shiftKey : true)) {
           event.preventDefault();
 
           switch (shortcut.action) {
@@ -121,6 +122,14 @@ function ShortcutRow({ shortcut }) {
           <>
             <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">
               ⌘/Ctrl
+            </kbd>
+            <span className="text-muted-foreground">+</span>
+          </>
+        )}
+        {shortcut.alt && (
+          <>
+            <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">
+              Alt
             </kbd>
             <span className="text-muted-foreground">+</span>
           </>

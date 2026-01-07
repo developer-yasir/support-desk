@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,7 +151,7 @@ export default function CreateTicket() {
     };
 
     setContacts((prev) => [...prev, newContact]);
-    
+
     // Auto-select the new contact
     setFormData((prev) => ({
       ...prev,
@@ -220,17 +221,33 @@ export default function CreateTicket() {
 
     setLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const ticketPayload = {
+        subject: formData.subject,
+        description: formData.description,
+        category: formData.category,
+        priority: formData.priority,
+        company: formData.companyName,
+        // assignedTo: formData.agentId !== 'unassigned' ? formData.agentId : undefined 
+        // Note: Backend might need Object ID for assignedTo, but if agentId is from mock data it might fail cast. 
+        // For now, let's omit assignedTo if using mock agents, or send if they match real User IDs.
+        // Given backend constraints, safe to send basic fields first.
+      };
 
-    toast.success("Ticket created successfully!");
-    navigate("/tickets");
+      await api.createTicket(ticketPayload);
 
-    setLoading(false);
+      toast.success("Ticket created successfully!");
+      navigate("/tickets");
+    } catch (error) {
+      console.error(error);
+      toast.error(error.message || "Failed to create ticket");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Get company info for display
-  const selectedCompany = formData.companyId 
+  const selectedCompany = formData.companyId
     ? COMPANIES.find((c) => c.id === formData.companyId)
     : null;
 
@@ -315,8 +332,8 @@ export default function CreateTicket() {
                     </PopoverTrigger>
                     <PopoverContent className="w-[400px] p-0" align="start">
                       <Command shouldFilter={false}>
-                        <CommandInput 
-                          placeholder="Search by name, email, or company..." 
+                        <CommandInput
+                          placeholder="Search by name, email, or company..."
                           value={contactSearch}
                           onValueChange={setContactSearch}
                         />
@@ -350,31 +367,31 @@ export default function CreateTicket() {
                                 );
                               })
                               .map((contact) => (
-                              <CommandItem
-                                key={contact.id}
-                                value={`${contact.name} ${contact.email} ${contact.companyName}`}
-                                onSelect={() => {
-                                  handleContactChange(contact.id);
-                                  setContactOpen(false);
-                                  setContactSearch("");
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    formData.contactId === contact.id
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                <div className="flex flex-col">
-                                  <span className="font-medium">{contact.name}</span>
-                                  <span className="text-sm text-muted-foreground">
-                                    {contact.email} • {contact.companyName}
-                                  </span>
-                                </div>
-                              </CommandItem>
-                            ))}
+                                <CommandItem
+                                  key={contact.id}
+                                  value={`${contact.name} ${contact.email} ${contact.companyName}`}
+                                  onSelect={() => {
+                                    handleContactChange(contact.id);
+                                    setContactOpen(false);
+                                    setContactSearch("");
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      formData.contactId === contact.id
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                    )}
+                                  />
+                                  <div className="flex flex-col">
+                                    <span className="font-medium">{contact.name}</span>
+                                    <span className="text-sm text-muted-foreground">
+                                      {contact.email} • {contact.companyName}
+                                    </span>
+                                  </div>
+                                </CommandItem>
+                              ))}
                           </CommandGroup>
                         </CommandList>
                       </Command>

@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
+import { api } from "../lib/api";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -33,8 +34,8 @@ import {
   GitBranch,
   ChevronDown,
 } from "lucide-react";
-import { TICKETS, STATUSES, PRIORITIES, AGENTS } from "../data/mockData";
 import { formatDistanceToNow } from "date-fns";
+import { STATUSES, PRIORITIES, AGENTS } from "../data/mockData";
 import TicketFiltersSidebar from "../components/TicketFiltersSidebar";
 import SavedViewsPanel from "../components/tickets/SavedViewsPanel";
 import BulkActionsBar from "../components/tickets/BulkActionsBar";
@@ -45,7 +46,7 @@ import { toast } from "sonner";
 const getAvatarColor = (name) => {
   const colors = [
     "bg-orange-400",
-    "bg-teal-400", 
+    "bg-teal-400",
     "bg-pink-400",
     "bg-purple-400",
     "bg-blue-400",
@@ -65,7 +66,7 @@ const PriorityDropdown = ({ priority, ticketId, onUpdate }) => {
     urgent: { color: "bg-red-500", label: "Urgent" },
   };
   const { color, label } = config[priority] || config.low;
-  
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -79,8 +80,8 @@ const PriorityDropdown = ({ priority, ticketId, onUpdate }) => {
         <DropdownMenuLabel className="text-xs">Set Priority</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {PRIORITIES.map((p) => (
-          <DropdownMenuItem 
-            key={p.id} 
+          <DropdownMenuItem
+            key={p.id}
             onClick={(e) => {
               e.stopPropagation();
               onUpdate(ticketId, 'priority', p.id);
@@ -111,8 +112,8 @@ const StatusDropdown = ({ status, ticketId, onUpdate }) => {
         <DropdownMenuLabel className="text-xs">Set Status</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {STATUSES.map((s) => (
-          <DropdownMenuItem 
-            key={s.id} 
+          <DropdownMenuItem
+            key={s.id}
             onClick={(e) => {
               e.stopPropagation();
               onUpdate(ticketId, 'status', s.id);
@@ -136,14 +137,14 @@ const AgentDropdown = ({ ticketId, agentId, customerName, onUpdate }) => {
           <User className="h-3.5 w-3.5" />
           <span className="truncate max-w-[80px]">{customerName?.slice(0, 10)}...</span>
           <span>/</span>
-          <span>{agent?.name?.split(' ')[0] || '--'}</span>
+          <span>{agent?.name?.split(' ')[0] || (agentId ? 'Unknown' : '--')}</span>
           <ChevronDown className="h-3 w-3" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40 z-50 bg-popover">
         <DropdownMenuLabel className="text-xs">Assign Agent</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem 
+        <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
             onUpdate(ticketId, 'agent', null);
@@ -153,8 +154,8 @@ const AgentDropdown = ({ ticketId, agentId, customerName, onUpdate }) => {
           Unassigned
         </DropdownMenuItem>
         {AGENTS.map((a) => (
-          <DropdownMenuItem 
-            key={a.id} 
+          <DropdownMenuItem
+            key={a.id}
             onClick={(e) => {
               e.stopPropagation();
               onUpdate(ticketId, 'agent', a.id);
@@ -179,7 +180,7 @@ const DEFAULT_FILTERS = {
   resolvedAt: "any",
   resolutionDue: "any",
   firstResponseDue: "any",
-  statuses: ["open", "pending"],
+  statuses: [],
 };
 
 export default function Tickets() {
@@ -188,12 +189,39 @@ export default function Tickets() {
   const initialSearch = searchParams.get("search") || "";
 
   const [search, setSearch] = useState(initialSearch);
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [selectedTickets, setSelectedTickets] = useState([]);
   const [showFilters, setShowFilters] = useState(true);
   const [showSavedViews, setShowSavedViews] = useState(false);
   const [sortBy, setSortBy] = useState("dateCreated");
-  const [filters, setFilters] = useState(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState(() => {
+    const saved = localStorage.getItem("ticketFilters");
+    return saved ? JSON.parse(saved) : DEFAULT_FILTERS;
+  });
+
+  // Save filters to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("ticketFilters", JSON.stringify(filters));
+  }, [filters]);
   const [activeViewId, setActiveViewId] = useState(null);
+
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        setLoading(true);
+        const data = await api.getTickets();
+        // Backend returns { data: { tickets: [...] } }
+        setTickets(data.data.tickets);
+      } catch (error) {
+        toast.error("Failed to fetch tickets: " + error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTickets();
+  }, []);
 
   // Calculate active filter count
   const activeFilterCount = useMemo(() => {
@@ -212,23 +240,23 @@ export default function Tickets() {
   }, [filters]);
 
   const filteredTickets = useMemo(() => {
-    let tickets = TICKETS;
+    let currentTickets = tickets;
 
     // Search filter
     if (search) {
       const searchLower = search.toLowerCase();
-      tickets = tickets.filter(
+      currentTickets = currentTickets.filter(
         (t) =>
           t.subject.toLowerCase().includes(searchLower) ||
-          t.id.toLowerCase().includes(searchLower) ||
-          t.customerName.toLowerCase().includes(searchLower)
+          t._id?.toLowerCase().includes(searchLower) ||
+          t.createdBy?.name?.toLowerCase().includes(searchLower)
       );
     }
 
     // Search fields filter
     if (filters.searchFields) {
       const searchLower = filters.searchFields.toLowerCase();
-      tickets = tickets.filter(
+      currentTickets = currentTickets.filter(
         (t) =>
           t.subject.toLowerCase().includes(searchLower) ||
           t.description.toLowerCase().includes(searchLower)
@@ -237,27 +265,27 @@ export default function Tickets() {
 
     // Status filter (multiple)
     if (filters.statuses.length > 0) {
-      tickets = tickets.filter((t) => filters.statuses.includes(t.status));
+      currentTickets = currentTickets.filter((t) => filters.statuses.includes(t.status));
     }
 
     // Priority filter
     if (filters.priority !== "any") {
-      tickets = tickets.filter((t) => t.priority === filters.priority);
+      currentTickets = currentTickets.filter((t) => t.priority === filters.priority);
     }
 
     // Agent filter
     if (filters.agent !== "any") {
       if (filters.agent === "unassigned") {
-        tickets = tickets.filter((t) => !t.agentId);
+        currentTickets = currentTickets.filter((t) => !t.assignedTo);
       } else if (filters.agent === "current") {
-        tickets = tickets.filter((t) => t.agentId === user?.id);
+        currentTickets = currentTickets.filter((t) => t.assignedTo?._id === user?.id);
       } else {
-        tickets = tickets.filter((t) => t.agentId === filters.agent);
+        currentTickets = currentTickets.filter((t) => t.assignedTo?._id === filters.agent);
       }
     }
 
     // Sort tickets
-    return [...tickets].sort((a, b) => {
+    return [...currentTickets].sort((a, b) => {
       switch (sortBy) {
         case "dateCreated":
           return new Date(b.createdAt) - new Date(a.createdAt);
@@ -273,7 +301,7 @@ export default function Tickets() {
           return 0;
       }
     });
-  }, [search, filters, user?.id, sortBy]);
+  }, [search, filters, user?.id, sortBy, tickets]);
 
   const toggleSelectAll = () => {
     if (selectedTickets.length === filteredTickets.length) {
@@ -327,12 +355,12 @@ export default function Tickets() {
   const handleTicketQuickUpdate = (ticketId, field, value) => {
     // In a real app, this would update the backend
     const fieldLabels = { priority: 'Priority', status: 'Status', agent: 'Agent' };
-    const valueLabel = field === 'agent' 
+    const valueLabel = field === 'agent'
       ? (value ? AGENTS.find(a => a.id === value)?.name : 'Unassigned')
       : field === 'status'
         ? STATUSES.find(s => s.id === value)?.label
         : PRIORITIES.find(p => p.id === value)?.label;
-    
+
     toast.success(`${fieldLabels[field]} updated to "${valueLabel}" for ticket ${ticketId}`);
     console.log(`Update ticket ${ticketId}: ${field} = ${value}`);
   };
@@ -381,8 +409,8 @@ export default function Tickets() {
                 <span className="hidden sm:inline">New</span>
               </Link>
             </Button>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               className="md:hidden"
               onClick={() => setShowFilters(!showFilters)}
@@ -475,27 +503,27 @@ export default function Tickets() {
           ) : (
             <div>
               {filteredTickets.map((ticket, index) => {
-                const hasCustomerResponse = index === 3;
-                
+                const hasCustomerResponse = index === 3; // Keep dummy logic for now
+
                 return (
                   <div
-                    key={ticket.id}
+                    key={ticket._id}
                     className="flex items-start gap-2 sm:gap-4 px-4 md:px-6 py-3 md:py-4 border-b hover:bg-accent/30 transition-colors group"
                   >
                     <Checkbox
-                      checked={selectedTickets.includes(ticket.id)}
-                      onCheckedChange={() => toggleSelect(ticket.id)}
+                      checked={selectedTickets.includes(ticket._id)}
+                      onCheckedChange={() => toggleSelect(ticket._id)}
                       className="mt-2 sm:mt-3"
                     />
-                    
+
                     {/* Left border indicator - hidden on mobile */}
                     <div className="hidden sm:block w-1 h-full min-h-[60px] bg-primary/20 rounded-full" />
-                    
+
                     {/* Avatar */}
-                    <div className={`h-8 w-8 sm:h-10 sm:w-10 rounded-full ${getAvatarColor(ticket.customerName)} flex items-center justify-center flex-shrink-0 text-white font-medium text-sm`}>
-                      {ticket.customerName.charAt(0).toUpperCase()}
+                    <div className={`h-8 w-8 sm:h-10 sm:w-10 rounded-full ${getAvatarColor(ticket.createdBy?.name || 'User')} flex items-center justify-center flex-shrink-0 text-white font-medium text-sm`}>
+                      {(ticket.createdBy?.name || 'User').charAt(0).toUpperCase()}
                     </div>
-                    
+
                     {/* Main content */}
                     <div className="flex-1 min-w-0">
                       {/* Customer responded badge */}
@@ -504,51 +532,53 @@ export default function Tickets() {
                           Customer responded
                         </Badge>
                       )}
-                      
+
                       <Link
-                        to={`/tickets/${ticket.id}`}
+                        to={`/tickets/${ticket._id}`}
                         className="font-medium hover:underline block text-sm sm:text-base truncate"
                       >
                         {ticket.subject}{" "}
                         <span className="text-muted-foreground font-normal">
-                          #{ticket.id.replace("TKT-", "")}
+                          #{ticket.ticketNumber}
                         </span>
                       </Link>
-                      
+
                       <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-xs sm:text-sm text-muted-foreground mt-1">
                         <Mail className="h-3 w-3 sm:h-3.5 sm:w-3.5 hidden sm:block" />
-                        <span className="font-medium text-foreground truncate max-w-[100px] sm:max-w-none">{ticket.customerName}</span>
+                        <span className="font-medium text-foreground truncate max-w-[100px] sm:max-w-none">{ticket.createdBy?.name}</span>
                         <span className="hidden sm:inline">•</span>
                         <span className="hidden sm:inline">
                           {formatDistanceToNow(new Date(ticket.updatedAt), { addSuffix: false })} ago
                         </span>
                         <span className="hidden md:inline">•</span>
-                        <span className="hidden md:inline">
-                          Due: {formatDistanceToNow(new Date(ticket.slaDeadline))}
-                        </span>
+                        {ticket.dueDate && (
+                          <span className="hidden md:inline">
+                            Due: {formatDistanceToNow(new Date(ticket.dueDate))}
+                          </span>
+                        )}
                       </div>
-                      
+
                       {/* Mobile: Priority & Status inline */}
                       <div className="flex items-center gap-1 mt-2 sm:hidden">
-                        <PriorityDropdown priority={ticket.priority} ticketId={ticket.id} onUpdate={handleTicketQuickUpdate} />
-                        <StatusDropdown status={ticket.status} ticketId={ticket.id} onUpdate={handleTicketQuickUpdate} />
+                        <PriorityDropdown priority={ticket.priority} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
+                        <StatusDropdown status={ticket.status} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
                       </div>
                     </div>
-                    
+
                     {/* Right side info - Desktop only */}
                     <div className="hidden sm:flex flex-col items-end gap-1 flex-shrink-0 min-w-[140px] lg:min-w-[160px]">
-                      <PriorityDropdown priority={ticket.priority} ticketId={ticket.id} onUpdate={handleTicketQuickUpdate} />
-                      
+                      <PriorityDropdown priority={ticket.priority} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
+
                       <div className="hidden lg:block">
-                        <AgentDropdown 
-                          ticketId={ticket.id} 
-                          agentId={ticket.agentId} 
-                          customerName={ticket.customerName}
-                          onUpdate={handleTicketQuickUpdate} 
+                        <AgentDropdown
+                          ticketId={ticket._id}
+                          agentId={ticket.assignedTo?._id}
+                          customerName={ticket.createdBy?.name}
+                          onUpdate={handleTicketQuickUpdate}
                         />
                       </div>
-                      
-                      <StatusDropdown status={ticket.status} ticketId={ticket.id} onUpdate={handleTicketQuickUpdate} />
+
+                      <StatusDropdown status={ticket.status} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
                     </div>
                   </div>
                 );
@@ -562,7 +592,7 @@ export default function Tickets() {
       {showFilters && (
         <>
           {/* Mobile overlay */}
-          <div 
+          <div
             className="fixed inset-0 bg-black/50 z-40 md:hidden"
             onClick={() => setShowFilters(false)}
           />

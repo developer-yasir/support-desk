@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { api } from "../lib/api";
 
 const AuthContext = createContext(null);
 
@@ -22,46 +23,60 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const savedUser = localStorage.getItem("workdesks_user");
-    if (savedUser) {
-      const parsed = JSON.parse(savedUser);
-      setUser({ ...parsed, role: normalizeRole(parsed.role) });
+    const token = localStorage.getItem("workdesks_token");
+
+    if (savedUser && token) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setUser({ ...parsed, role: normalizeRole(parsed.role) });
+      } catch (e) {
+        console.error("Failed to parse user", e);
+        localStorage.removeItem("workdesks_user");
+        localStorage.removeItem("workdesks_token");
+      }
     }
     setLoading(false);
   }, []);
 
   const login = async (email, password) => {
-    const foundUser = MOCK_USERS.find(
-      (u) => u.email === email && u.password === password
-    );
-    if (foundUser) {
-      const { password: _, ...userWithoutPassword } = foundUser;
-      setUser(userWithoutPassword);
-      localStorage.setItem("workdesks_user", JSON.stringify(userWithoutPassword));
+    try {
+      const data = await api.login(email, password);
+      // data.data.user, data.data.token
+      const { user: userData, token } = data.data;
+
+      const normalizedUser = { ...userData, role: normalizeRole(userData.role) };
+
+      setUser(normalizedUser);
+      localStorage.setItem("workdesks_user", JSON.stringify(normalizedUser));
+      localStorage.setItem("workdesks_token", token);
+
       return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message || "Login failed" };
     }
-    return { success: false, error: "Invalid email or password" };
   };
 
   const register = async (email, password, name) => {
-    const exists = MOCK_USERS.find((u) => u.email === email);
-    if (exists) {
-      return { success: false, error: "Email already registered" };
+    try {
+      const data = await api.register(name, email, password);
+      const { user: userData, token } = data.data;
+
+      const normalizedUser = { ...userData, role: normalizeRole(userData.role) };
+
+      setUser(normalizedUser);
+      localStorage.setItem("workdesks_user", JSON.stringify(normalizedUser));
+      localStorage.setItem("workdesks_token", token);
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message || "Registration failed" };
     }
-    const newUser = {
-      id: String(MOCK_USERS.length + 1),
-      email,
-      name,
-      role: "customer",
-      avatar: null,
-    };
-    setUser(newUser);
-    localStorage.setItem("workdesks_user", JSON.stringify(newUser));
-    return { success: true };
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem("workdesks_user");
+    localStorage.removeItem("workdesks_token");
   };
 
   const value = {
