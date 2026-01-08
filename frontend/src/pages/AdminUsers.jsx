@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -35,14 +36,20 @@ import {
 import { Label } from "@/components/ui/label";
 import { Plus, Search, MoreHorizontal, Shield, User, UserCog } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../contexts/AuthContext";
 
-const USERS = [
-  { id: "1", name: "Super Admin", email: "superadmin@workdesks.com", role: "superadmin", status: "active", lastActive: "Just now" },
-  { id: "2", name: "Company Manager", email: "manager@workdesks.com", role: "company_manager", status: "active", lastActive: "5 min ago" },
-  { id: "3", name: "Support Agent", email: "agent@workdesks.com", role: "agent", status: "active", lastActive: "10 min ago" },
-  { id: "4", name: "Sarah Wilson", email: "sarah@workdesks.com", role: "agent", status: "active", lastActive: "1 hour ago" },
-  { id: "5", name: "Mike Johnson", email: "mike@workdesks.com", role: "agent", status: "active", lastActive: "2 hours ago" },
-];
+import { api } from "../lib/api";
+import { Loader2 } from "lucide-react";
+
+// Helper to get initials
+const getInitials = (name) => {
+  return name
+    ?.split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .substring(0, 2);
+};
 
 const RoleBadge = ({ role }) => {
   const config = {
@@ -61,22 +68,94 @@ const RoleBadge = ({ role }) => {
 };
 
 export default function AdminUsers() {
+  const { user: currentUser } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    email: "",
+    password: "",
+    role: "agent",
+  });
 
-  const filteredUsers = USERS.filter((user) => {
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      const res = await api.getUsers();
+      setUsers(res.data.users || []);
+    } catch (err) {
+      toast.error("Failed to fetch users");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useState(() => {
+    fetchUsers();
+  }, []);
+
+  const handleToggleFullAccess = async (user) => {
+    if (user.role !== 'agent') return;
+
+    const hasAccess = user.permissions?.includes('view_all_tickets');
+    let newPermissions = user.permissions || [];
+
+    if (hasAccess) {
+      newPermissions = newPermissions.filter(p => p !== 'view_all_tickets');
+    } else {
+      newPermissions = [...newPermissions, 'view_all_tickets'];
+    }
+
+    try {
+      const res = await api.updateUser(user._id, { permissions: newPermissions });
+      // Update local state
+      setUsers(prev => prev.map(u => u._id === user._id ? res.data.user : u));
+      toast.success(`Permissions updated for ${user.name}`);
+    } catch (err) {
+      toast.error("Failed to update permissions");
+    }
+  };
+
+  const filteredUsers = users.filter((user) => {
     const matchesSearch =
-      user.name.toLowerCase().includes(search.toLowerCase()) ||
-      user.email.toLowerCase().includes(search.toLowerCase());
+      user.name?.toLowerCase().includes(search.toLowerCase()) ||
+      user.email?.toLowerCase().includes(search.toLowerCase());
     const matchesRole = roleFilter === "all" || user.role === roleFilter;
     return matchesSearch && matchesRole;
   });
 
-  const handleCreateUser = (e) => {
+  const handleCreateUser = async (e) => {
     e.preventDefault();
-    toast.success("User created successfully!");
-    setIsDialogOpen(false);
+
+    try {
+      const res = await api.createUser(formData);
+      setUsers([...users, res.data.user]);
+      toast.success("User created successfully!");
+      setIsDialogOpen(false);
+      setFormData({ name: "", email: "", password: "", role: "agent" }); // Reset
+    } catch (err) {
+      toast.error(err.message || "Failed to create user");
+    }
+  };
+
+  const getAvailableRoles = () => {
+    if (currentUser?.role === 'manager') {
+      return [
+        { value: 'agent', label: 'Agent' },
+        { value: 'customer', label: 'Customer' }
+      ];
+    }
+    // Superadmin / Admin
+    return [
+      { value: 'superadmin', label: 'Super Admin' },
+      { value: 'company_manager', label: 'Company Manager' },
+      { value: 'agent', label: 'Agent' },
+      { value: 'customer', label: 'Customer' }
+    ];
   };
 
   return (
@@ -107,28 +186,53 @@ export default function AdminUsers() {
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">Full Name</Label>
-                  <Input id="name" placeholder="John Doe" required />
+                  <Input
+                    id="name"
+                    placeholder="John Doe"
+                    required
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" type="email" placeholder="john@example.com" required />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="john@example.com"
+                    required
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role</Label>
-                  <Select defaultValue="agent">
+                  <Select
+                    value={formData.role}
+                    onValueChange={(val) => setFormData({ ...formData, role: val })}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="superadmin">Super Admin</SelectItem>
-                      <SelectItem value="company_manager">Company Manager</SelectItem>
-                      <SelectItem value="agent">Agent</SelectItem>
+                      {getAvailableRoles().map(role => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Temporary Password</Label>
-                  <Input id="password" type="password" placeholder="••••••••" required />
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="••••••••"
+                    required
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  />
                 </div>
               </div>
               <DialogFooter>
@@ -173,57 +277,88 @@ export default function AdminUsers() {
             <TableRow>
               <TableHead>User</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Permissions</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Last Active</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredUsers.map((user) => (
-              <TableRow key={user.id}>
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
-                      <span className="text-sm font-medium text-primary-foreground">
-                        {user.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="font-medium">{user.name}</p>
-                      <p className="text-sm text-muted-foreground">{user.email}</p>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <RoleBadge role={user.role} />
-                </TableCell>
-                <TableCell>
-                  <Badge variant={user.status === "active" ? "default" : "secondary"}>
-                    {user.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">
-                  {user.lastActive}
-                </TableCell>
-                <TableCell>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem>Edit User</DropdownMenuItem>
-                      <DropdownMenuItem>Reset Password</DropdownMenuItem>
-                      <DropdownMenuItem>View Activity</DropdownMenuItem>
-                      <DropdownMenuItem className="text-destructive">
-                        Deactivate
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
                 </TableCell>
               </TableRow>
-            ))}
+            ) : filteredUsers.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  No users found
+                </TableCell>
+              </TableRow>
+            ) : (
+              filteredUsers.map((user) => (
+                <TableRow key={user._id || user.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center">
+                        <span className="text-sm font-medium text-primary-foreground">
+                          {getInitials(user.name)}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-medium">{user.name}</p>
+                        <p className="text-sm text-muted-foreground">{user.email}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <RoleBadge role={user.role} />
+                  </TableCell>
+                  <TableCell>
+                    {user.role === 'agent' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                          "h-6 text-xs border",
+                          user.permissions?.includes('view_all_tickets')
+                            ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100 hover:text-green-800"
+                            : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                        )}
+                        onClick={() => handleToggleFullAccess(user)}
+                      >
+                        {user.permissions?.includes('view_all_tickets') ? 'Full Access' : 'Restricted'}
+                      </Button>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={user.isActive ? "default" : "secondary"}>
+                      {user.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>Edit User</DropdownMenuItem>
+                        <DropdownMenuItem>Reset Password</DropdownMenuItem>
+                        {user.role === 'agent' && (
+                          <DropdownMenuItem onClick={() => handleToggleFullAccess(user)}>
+                            {user.permissions?.includes('view_all_tickets') ? 'Restrict Access' : 'Grant Full Access'}
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem className="text-destructive">
+                          Deactivate
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              )))}
           </TableBody>
         </Table>
       </div>

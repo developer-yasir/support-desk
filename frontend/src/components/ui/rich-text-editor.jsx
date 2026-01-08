@@ -227,14 +227,14 @@ const MenuBar = ({ editor }) => {
   );
 };
 
-export function RichTextEditor({
+export const RichTextEditor = React.forwardRef(({
   content = "",
   onChange,
   placeholder = "Write something...",
   className,
   editorClassName,
   minHeight = "150px",
-}) {
+}, ref) => {
   const extensions = React.useMemo(() => [
     StarterKit.configure({
       heading: false,
@@ -268,6 +268,13 @@ export function RichTextEditor({
       },
     },
   });
+
+  // Expose focus method to parent
+  React.useImperativeHandle(ref, () => ({
+    focus: () => {
+      editor?.commands.focus('end');
+    }
+  }), [editor]);
 
   return (
     <div className={cn("border rounded-lg bg-card overflow-hidden", className)}>
@@ -303,7 +310,9 @@ export function RichTextEditor({
       `}</style>
     </div>
   );
-}
+});
+
+RichTextEditor.displayName = "RichTextEditor";
 
 export function useRichTextEditor({
   content = "",

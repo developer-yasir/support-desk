@@ -517,126 +517,163 @@ export default function Tickets() {
           />
         )}
 
-        {/* Tickets List */}
-        <div className="flex-1 overflow-auto">
-          {filteredTickets.length === 0 ? (
-            <div className="flex items-center justify-center h-64">
-              <p className="text-muted-foreground">No tickets found</p>
-            </div>
-          ) : (
-            <div>
-              {filteredTickets.map((ticket, index) => {
-                const hasCustomerResponse = index === 3; // Keep dummy logic for now
+        {/* Content Area with Sidebar */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Tickets List */}
+          <div className="flex-1 overflow-auto">
+            {filteredTickets.length === 0 ? (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-muted-foreground">No tickets found</p>
+              </div>
+            ) : (
+              <div>
+                {filteredTickets.map((ticket, index) => {
 
-                return (
-                  <div
-                    key={ticket._id}
-                    className="flex items-start gap-2 sm:gap-4 px-4 md:px-6 py-3 md:py-4 border-b hover:bg-accent/30 transition-colors group"
-                  >
-                    <Checkbox
-                      checked={selectedTickets.includes(ticket._id)}
-                      onCheckedChange={() => toggleSelect(ticket._id)}
-                      className="mt-2 sm:mt-3"
-                    />
+                  return (
+                    <div
+                      key={ticket._id}
+                      className="flex items-start gap-2 sm:gap-4 px-4 md:px-6 py-3 md:py-4 border-b hover:bg-accent/30 transition-colors group"
+                    >
+                      <Checkbox
+                        checked={selectedTickets.includes(ticket._id)}
+                        onCheckedChange={() => toggleSelect(ticket._id)}
+                        className="mt-2 sm:mt-3"
+                      />
 
-                    {/* Left border indicator - hidden on mobile */}
-                    <div className="hidden sm:block w-1 h-full min-h-[60px] bg-primary/20 rounded-full" />
+                      {/* Left border indicator - hidden on mobile */}
+                      <div className="hidden sm:block w-1 h-full min-h-[60px] bg-primary/20 rounded-full" />
 
-                    {/* Avatar */}
-                    <div className={`h-8 w-8 sm:h-10 sm:w-10 rounded-full ${getAvatarColor(ticket.createdBy?.name || 'User')} flex items-center justify-center flex-shrink-0 text-white font-medium text-sm`}>
-                      {(ticket.createdBy?.name || 'User').charAt(0).toUpperCase()}
-                    </div>
-
-                    {/* Main content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Customer responded badge */}
-                      {hasCustomerResponse && (
-                        <Badge variant="outline" className="mb-1 text-xs border-teal-500 text-teal-600 bg-teal-50 dark:bg-teal-950 dark:text-teal-400">
-                          Customer responded
-                        </Badge>
-                      )}
-
-                      <Link
-                        to={`/tickets/${ticket._id}`}
-                        className="font-medium hover:underline block text-sm sm:text-base truncate"
-                      >
-                        {ticket.subject}{" "}
-                        <span className="text-muted-foreground font-normal">
-                          #{ticket.ticketNumber}
-                        </span>
-                      </Link>
-
-                      <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-xs sm:text-sm text-muted-foreground mt-1">
-                        <Mail className="h-3 w-3 sm:h-3.5 sm:w-3.5 hidden sm:block" />
-                        <span className="font-medium text-foreground truncate max-w-[100px] sm:max-w-none">{ticket.createdBy?.name}</span>
-                        <span className="hidden sm:inline">•</span>
-                        <span className="hidden sm:inline">
-                          {formatDistanceToNow(new Date(ticket.updatedAt), { addSuffix: false })} ago
-                        </span>
-                        <span className="hidden md:inline">•</span>
-                        {ticket.dueDate && (
-                          <span className="hidden md:inline">
-                            Due: {formatDistanceToNow(new Date(ticket.dueDate))}
-                          </span>
-                        )}
+                      {/* Avatar */}
+                      <div className={`h-8 w-8 sm:h-10 sm:w-10 rounded-full ${getAvatarColor(ticket.createdBy?.name || 'User')} flex items-center justify-center flex-shrink-0 text-white font-medium text-sm`}>
+                        {(ticket.createdBy?.name || 'User').charAt(0).toUpperCase()}
                       </div>
 
-                      {/* Mobile: Priority & Status inline */}
-                      <div className="flex items-center gap-1 mt-2 sm:hidden">
+                      {/* Main content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Badges Row */}
+                        <div className="flex flex-wrap gap-2 mb-1">
+                          {/* Customer responded badge */}
+                          {ticket.comments && ticket.comments.length > 0 && ticket.comments[0].user?._id !== user?.id && (
+                            <Badge variant="outline" className="text-xs border-teal-500 text-teal-600 bg-teal-50 dark:bg-teal-950 dark:text-teal-400">
+                              Customer responded
+                            </Badge>
+                          )}
+
+                          {/* Overdue Badge */}
+                          {ticket.dueDate && new Date(ticket.dueDate) < new Date() && !['resolved', 'closed'].includes(ticket.status) && (
+                            <Badge variant="destructive" className="text-xs">
+                              Overdue
+                            </Badge>
+                          )}
+
+                          {/* Response Due Badge (Computed SLA) */}
+                          {(() => {
+                            // Check if agent has responded (exclude system comments if possible, but for now check if ANY comment exists from non-customer)
+                            // This logic assumes if ticket.comments is empty or last comment is customer, we might need to respond.
+                            // Better logic: If status is Open/Pending and NO agent comments yet?
+
+                            // Let's simplified assumption: If status is New/Open and no comments? 
+                            // Or just check time since creation vs priority SLA if no comments exist.
+                            const hasAgentComment = ticket.comments?.some(c => c.user?.role !== 'customer');
+                            if (hasAgentComment) return null;
+
+                            const slaHours = { urgent: 4, high: 8, medium: 24, low: 48 };
+                            const hoursAllowed = slaHours[ticket.priority] || 24;
+                            const dueTime = new Date(new Date(ticket.createdAt).getTime() + hoursAllowed * 60 * 60 * 1000);
+
+                            if (new Date() > dueTime && !['resolved', 'closed'].includes(ticket.status)) {
+                              return (
+                                <Badge variant="outline" className="text-xs border-orange-500 text-orange-600 bg-orange-50 dark:bg-orange-950 dark:text-orange-400">
+                                  First Response Overdue
+                                </Badge>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
+
+                        <Link
+                          to={`/tickets/${ticket._id}`}
+                          className="font-medium hover:underline block text-sm sm:text-base truncate"
+                        >
+                          {ticket.subject}{" "}
+                          <span className="text-muted-foreground font-normal">
+                            #{ticket.ticketNumber}
+                          </span>
+                        </Link>
+
+                        <div className="flex flex-wrap items-center gap-1 sm:gap-2 text-xs sm:text-sm text-muted-foreground mt-1">
+                          <Mail className="h-3 w-3 sm:h-3.5 sm:w-3.5 hidden sm:block" />
+                          <span className="font-medium text-foreground truncate max-w-[100px] sm:max-w-none">{ticket.createdBy?.name}</span>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="hidden sm:inline">
+                            {formatDistanceToNow(new Date(ticket.updatedAt), { addSuffix: false })} ago
+                          </span>
+                          <span className="hidden md:inline">•</span>
+                          {ticket.dueDate && (
+                            <span className="hidden md:inline">
+                              Due: {formatDistanceToNow(new Date(ticket.dueDate))}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Mobile: Priority & Status inline */}
+                        <div className="flex items-center gap-1 mt-2 sm:hidden">
+                          <PriorityDropdown priority={ticket.priority} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
+                          <StatusDropdown status={ticket.status} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
+                        </div>
+                      </div>
+
+                      {/* Right side info - Desktop only */}
+                      <div className="hidden sm:flex flex-col items-end gap-1 flex-shrink-0 min-w-[140px] lg:min-w-[160px]">
                         <PriorityDropdown priority={ticket.priority} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
+
+                        <div className="hidden lg:block">
+                          <AgentDropdown
+                            ticketId={ticket._id}
+                            agentId={ticket.assignedTo?._id || ticket.assignedTo}
+                            customerName={ticket.createdBy?.name}
+                            onUpdate={handleTicketQuickUpdate}
+                            agents={agents}
+                          />
+                        </div>
+
                         <StatusDropdown status={ticket.status} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-                    {/* Right side info - Desktop only */}
-                    <div className="hidden sm:flex flex-col items-end gap-1 flex-shrink-0 min-w-[140px] lg:min-w-[160px]">
-                      <PriorityDropdown priority={ticket.priority} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
-
-                      <div className="hidden lg:block">
-                        <AgentDropdown
-                          ticketId={ticket._id}
-                          agentId={ticket.assignedTo?._id || ticket.assignedTo}
-                          customerName={ticket.createdBy?.name}
-                          onUpdate={handleTicketQuickUpdate}
-                          agents={agents}
-                        />
-                      </div>
-
-                      <StatusDropdown status={ticket.status} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          {/* Filters Sidebar - Slide-in on mobile, Inline on desktop */}
+          {showFilters && (
+            <>
+              {/* Mobile overlay */}
+              <div
+                className="fixed inset-0 bg-black/50 z-40 md:hidden"
+                onClick={() => setShowFilters(false)}
+              />
+              <div className="fixed right-0 top-0 h-full z-50 md:relative md:z-auto md:h-auto md:border-l md:bg-card">
+                <TicketFiltersSidebar
+                  filters={filters}
+                  onFilterChange={setFilters}
+                  onClearFilters={clearFilters}
+                  onApply={() => {
+                    handleApplyFilters();
+                    if (window.innerWidth < 768) {
+                      setShowFilters(false);
+                    }
+                  }}
+                  activeFilterCount={activeFilterCount}
+                  onClose={() => setShowFilters(false)}
+                />
+              </div>
+            </>
           )}
         </div>
       </div>
-
-      {/* Filters Sidebar - Slide-in on mobile */}
-      {showFilters && (
-        <>
-          {/* Mobile overlay */}
-          <div
-            className="fixed inset-0 bg-black/50 z-40 md:hidden"
-            onClick={() => setShowFilters(false)}
-          />
-          <div className="fixed right-0 top-0 h-full z-50 md:relative md:z-auto">
-            <TicketFiltersSidebar
-              filters={filters}
-              onFilterChange={setFilters}
-              onClearFilters={clearFilters}
-              onApply={() => {
-                handleApplyFilters();
-                if (window.innerWidth < 768) {
-                  setShowFilters(false);
-                }
-              }}
-              activeFilterCount={activeFilterCount}
-              onClose={() => setShowFilters(false)}
-            />
-          </div>
-        </>
-      )}
     </div>
   );
 }

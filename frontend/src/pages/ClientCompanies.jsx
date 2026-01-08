@@ -41,7 +41,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
 export default function ClientCompanies() {
-  const { isManager } = useAuth();
+  const { isManager, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +62,9 @@ export default function ClientCompanies() {
 
   const fetchCompanies = async () => {
     try {
-      const response = await api.getCompanies();
+      // Super Admin sees all companies, Managers see only client companies
+      const params = isSuperAdmin ? {} : { type: 'client-company' };
+      const response = await api.getCompanies(params);
       setCompanies(response.data.companies);
     } catch (error) {
       toast.error("Failed to fetch companies");

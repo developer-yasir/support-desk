@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const getHeaders = () => {
     const token = localStorage.getItem('workdesks_token');
@@ -94,10 +94,19 @@ export const api = {
 
     createTicket: async (ticketData) => {
         try {
+            const headers = getHeaders();
+            let body = ticketData;
+
+            if (ticketData instanceof FormData) {
+                delete headers['Content-Type']; // Let browser set boundary
+            } else {
+                body = JSON.stringify(ticketData);
+            }
+
             const response = await fetch(`${API_URL}/tickets`, {
                 method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(ticketData),
+                headers: headers,
+                body: body,
             });
             return handleResponse(response);
         } catch (error) {
@@ -122,10 +131,19 @@ export const api = {
 
     addComment: async (id, data) => {
         try {
+            const headers = getHeaders();
+            let body = data;
+
+            if (data instanceof FormData) {
+                delete headers['Content-Type'];
+            } else {
+                body = JSON.stringify(data);
+            }
+
             const response = await fetch(`${API_URL}/tickets/${id}/comments`, {
                 method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data),
+                headers: headers,
+                body: body,
             });
             return handleResponse(response);
         } catch (error) {
@@ -150,9 +168,10 @@ export const api = {
 
     // Users/Agents (if needed later)
     // Companies
-    getCompanies: async () => {
+    getCompanies: async (params = {}) => {
         try {
-            const response = await fetch(`${API_URL}/companies`, {
+            const queryString = new URLSearchParams(params).toString();
+            const response = await fetch(`${API_URL}/companies?${queryString}`, {
                 method: 'GET',
                 headers: getHeaders(),
             });
@@ -200,6 +219,49 @@ export const api = {
             return handleResponse(response);
         } catch (error) {
             console.error('Delete company error:', error);
+            throw error;
+        }
+    },
+
+    // Users (General)
+    getUsers: async (params = {}) => {
+        try {
+            const queryString = new URLSearchParams(params).toString();
+            const response = await fetch(`${API_URL}/users?${queryString}`, {
+                method: 'GET',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Get users error:', error);
+            throw error;
+        }
+    },
+
+    updateUser: async (id, data) => {
+        try {
+            const response = await fetch(`${API_URL}/users/${id}`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Update user error:', error);
+            throw error;
+        }
+    },
+
+    createUser: async (data) => {
+        try {
+            const response = await fetch(`${API_URL}/users`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Create user error:', error);
             throw error;
         }
     },

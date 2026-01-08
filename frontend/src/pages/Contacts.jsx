@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import ContactTicketHistory from "@/components/ContactTicketHistory";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Mail, Building2, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Search, Mail, Building2, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -73,11 +73,11 @@ export default function Contacts() {
 
   const fetchData = async () => {
     try {
-      const [contactsRes, companiesRes] = await Promise.all([
-        api.getContacts(),
+      const [usersRes, companiesRes] = await Promise.all([
+        api.getUsers({ role: 'customer,agent,company_manager' }), // Fetch all relevant roles as comma-separated string
         api.getCompanies()
       ]);
-      setContacts(contactsRes.data.users);
+      setContacts(usersRes.data.users);
       setCompanies(companiesRes.data.companies);
     } catch (error) {
       toast.error("Failed to fetch data");
@@ -162,6 +162,18 @@ export default function Contacts() {
       fetchData();
     } catch (error) {
       toast.error("Failed to delete contact");
+    }
+  };
+
+  const handlePromoteToAgent = async (contact) => {
+    if (!window.confirm(`Are you sure you want to promote ${contact.name} to Agent?`)) return;
+    try {
+      await api.updateUser(contact._id, { role: 'agent' });
+      toast.success(`${contact.name} promoted to Agent`);
+      // Remove from contacts list locally since they are now an agent
+      setContacts(contacts.filter(c => c._id !== contact._id));
+    } catch (error) {
+      toast.error("Failed to promote user");
     }
   };
 
@@ -360,7 +372,12 @@ export default function Contacts() {
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium">{contact.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{contact.name}</p>
+                            <Badge variant={contact.role === 'agent' ? 'default' : (contact.role === 'company_manager' ? 'secondary' : 'outline')} className="text-xs h-5 px-1.5 capitalize">
+                              {contact.role === 'company_manager' ? 'Manager' : contact.role}
+                            </Badge>
+                          </div>
                           <div className="flex items-center gap-3 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Mail className="h-3 w-3" />
@@ -390,6 +407,12 @@ export default function Contacts() {
                               <Pencil className="h-4 w-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
+                            {contact.role === 'customer' && (
+                              <DropdownMenuItem onClick={() => handlePromoteToAgent(contact)}>
+                                <UserCheck className="h-4 w-4 mr-2" />
+                                Promote to Agent
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() => handleDelete(contact._id)}
                               className="text-destructive"

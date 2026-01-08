@@ -29,6 +29,9 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    permissions: [{
+        type: String
+    }],
     isActive: {
         type: Boolean,
         default: true

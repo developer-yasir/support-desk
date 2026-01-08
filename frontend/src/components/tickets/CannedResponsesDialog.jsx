@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,9 @@ export default function CannedResponsesDialog({ onSelect, trigger }) {
             <MessageSquare className="h-5 w-5" />
             Canned Responses
           </DialogTitle>
+          <DialogDescription>
+            Select a pre-written response to insert into your reply.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

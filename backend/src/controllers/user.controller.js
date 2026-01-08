@@ -1,4 +1,5 @@
 import User from '../models/User.model.js';
+import Company from '../models/Company.model.js';
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -9,12 +10,28 @@ export const getUsers = async (req, res) => {
         let query = {};
 
         if (role) {
-            query.role = role;
+            // Support comma-separated roles
+            const roles = role.split(',');
+            if (roles.length > 1) {
+                query.role = { $in: roles };
+            } else {
+                query.role = role;
+            }
         }
 
-        // If manager, force query to their company
+        // If manager, force query to their company OR client companies they created
         if (req.user.role === 'manager') {
-            query.company = req.user.company;
+            // 1. Get client companies created by this manager
+            const clientCompanies = await Company.find({ createdBy: req.user.id });
+            const clientCompanyIds = clientCompanies.map(c => c._id);
+
+            // 2. Include own company and client companies
+            query.company = {
+                $in: [
+                    req.user.company,
+                    ...clientCompanyIds
+                ]
+            };
         } else if (companyId) {
             query.company = companyId;
         }
@@ -52,12 +69,29 @@ export const createUser = async (req, res) => {
             });
         }
 
+        let userRole = role || 'customer';
+        let userCompany = company;
+
+        // Security check for Managers
+        if (req.user.role === 'manager') {
+            // Managers can only create users for their own company
+            userCompany = req.user.company;
+
+            // Managers can only create 'agent' or 'customer' roles
+            if (!['agent', 'customer'].includes(userRole)) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Managers can only create Agents or Customers'
+                });
+            }
+        }
+
         const user = await User.create({
             name,
             email,
             password: password || '123456', // Default password if not provided
-            role: role || 'customer',
-            company,
+            role: userRole,
+            company: userCompany,
             phone,
             jobTitle
         });

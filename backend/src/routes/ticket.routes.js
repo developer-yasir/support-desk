@@ -11,6 +11,8 @@ import {
 } from '../controllers/ticket.controller.js';
 import { protect } from '../middleware/auth.middleware.js';
 
+import upload from '../middleware/upload.middleware.js';
+
 const router = express.Router();
 
 // All routes are protected
@@ -34,7 +36,7 @@ router.get('/:id', getTicket);
 // @route   POST /api/tickets
 // @desc    Create new ticket
 // @access  Private
-router.post('/', createTicket);
+router.post('/', upload.array('attachments', 5), createTicket);
 
 // @route   PUT /api/tickets/:id
 // @desc    Update ticket
@@ -49,7 +51,7 @@ router.delete('/:id', deleteTicket);
 // @route   POST /api/tickets/:id/comments
 // @desc    Add comment to ticket
 // @access  Private
-router.post('/:id/comments', addComment);
+router.post('/:id/comments', upload.array('attachments', 5), addComment);
 
 // @route   POST /api/tickets/:id/forward
 // @desc    Forward ticket via email
