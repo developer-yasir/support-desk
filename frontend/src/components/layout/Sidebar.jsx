@@ -47,14 +47,14 @@ const navigation = [
 ];
 
 const adminNavigation = [
-  { name: "User Management", href: "/admin/users", icon: UserCog },
-  { name: "Agent Management", href: "/admin/agents", icon: UserPlus },
-  { name: "Teams", href: "/admin/teams", icon: Users },
-  { name: "Permissions", href: "/admin/permissions", icon: Shield },
-  { name: "Automations", href: "/automations", icon: Zap },
-  { name: "Report Builder", href: "/admin/reports", icon: FileText },
-  { name: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardList },
-  { name: "Settings", href: "/admin/settings", icon: Settings },
+  { name: "User Management", href: "/admin/users", icon: UserCog, roles: ["superadmin"] },
+  { name: "Agent Management", href: "/admin/agents", icon: UserPlus, roles: ["superadmin", "company_manager"] },
+  { name: "Teams", href: "/admin/teams", icon: Users, roles: ["superadmin"] },
+  { name: "Permissions", href: "/admin/permissions", icon: Shield, roles: ["superadmin"] },
+  { name: "Automations", href: "/automations", icon: Zap, roles: ["superadmin", "company_manager"] },
+  { name: "Report Builder", href: "/admin/reports", icon: FileText, roles: ["superadmin"] },
+  { name: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardList, roles: ["superadmin"] },
+  { name: "Settings", href: "/admin/settings", icon: Settings, roles: ["superadmin", "company_manager"] },
 ];
 
 export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
@@ -70,12 +70,18 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
   };
 
   const effectiveRole = normalizeRole(user?.role);
+  const isManager = effectiveRole === 'company_manager';
+  const showAdminSection = isSuperAdmin || isManager;
 
   // Dashboard and Tickets should ALWAYS be visible regardless of role
   const alwaysVisibleNav = navigation.filter((item) => !item.roles);
-  
+
   const roleBasedNav = navigation.filter(
     (item) => item.roles && item.roles.includes(effectiveRole)
+  );
+
+  const filteredAdminNav = adminNavigation.filter(
+    (item) => !item.roles || item.roles.includes(effectiveRole)
   );
 
   // Combine: always-visible items + role-based items
@@ -167,7 +173,7 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
             </span>
           )}
         </div>
-        
+
         {isMobile && (
           <Button
             variant="ghost"
@@ -221,7 +227,7 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
             </span>
           </div>
         )}
-        
+
         <div className={cn(
           "space-y-1",
           isCollapsed && "flex flex-col items-center"
@@ -230,7 +236,7 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
         </div>
 
         {/* Admin Section */}
-        {isSuperAdmin && (
+        {showAdminSection && (
           <>
             {/* Divider */}
             <div className={cn(
@@ -248,12 +254,12 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
                 </div>
               )}
             </div>
-            
+
             <div className={cn(
               "space-y-1",
               isCollapsed && "flex flex-col items-center"
             )}>
-              {adminNavigation.map((item) => renderNavItem(item, "Admin"))}
+              {filteredAdminNav.map((item) => renderNavItem(item, "Admin"))}
             </div>
           </>
         )}
@@ -269,8 +275,8 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
             <button
               className={cn(
                 "flex items-center rounded-lg cursor-pointer w-full transition-colors",
-                isCollapsed 
-                  ? "justify-center p-1 hover:bg-sidebar-accent" 
+                isCollapsed
+                  ? "justify-center p-1 hover:bg-sidebar-accent"
                   : "gap-3 p-2 hover:bg-sidebar-accent"
               )}
             >
@@ -289,10 +295,10 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
                       {user.name}
                     </p>
                     <p className="text-xs text-sidebar-foreground/60 truncate">
-                      {user.role === "superadmin" 
-                        ? "Super Admin" 
-                        : user.role === "company_manager" 
-                          ? "Manager" 
+                      {user.role === "superadmin"
+                        ? "Super Admin"
+                        : user.role === "company_manager"
+                          ? "Manager"
                           : user.role === "customer"
                             ? "Customer"
                             : "Agent"}
@@ -303,8 +309,8 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
               )}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent 
-            side={isCollapsed ? "right" : "top"} 
+          <DropdownMenuContent
+            side={isCollapsed ? "right" : "top"}
             align={isCollapsed ? "start" : "end"}
             className="w-56"
           >
@@ -315,7 +321,7 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={() => {
                 handleNavClick();
                 navigate("/profile");
@@ -325,7 +331,7 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
               <UserCircle className="mr-2 h-4 w-4" />
               Profile
             </DropdownMenuItem>
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={() => {
                 handleNavClick();
                 navigate("/admin/settings");
@@ -336,7 +342,7 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               onClick={() => {
                 logout();
                 navigate("/login");

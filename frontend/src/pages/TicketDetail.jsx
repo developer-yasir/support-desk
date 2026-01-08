@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, API_URL } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -38,6 +38,7 @@ import {
   Printer,
   Timer,
   Calendar,
+  Eye,
 } from "lucide-react";
 import { TICKETS, STATUSES, PRIORITIES, AGENTS, CATEGORIES, CANNED_RESPONSES } from "../data/mockData";
 import { format, formatDistanceToNow } from "date-fns";
@@ -47,6 +48,7 @@ import TimeTracker from "../components/tickets/TimeTracker";
 import CollisionDetector from "../components/tickets/CollisionDetector";
 import { useAgentSignature, AgentSignatureSettings, SignaturePreview } from "../components/tickets/AgentSignature";
 import ForwardTicketDialog from "../components/tickets/ForwardTicketDialog";
+import { TicketRecipientSelector } from "../components/tickets/TicketRecipientSelector";
 
 // Avatar colors based on name initial
 const getAvatarColor = (name) => {
@@ -88,6 +90,8 @@ const GROUPS = [
   { id: "sales", label: "Sales" },
 ];
 
+import FilePreviewModal from "@/components/FilePreviewModal"; // Import modal
+
 export default function TicketDetail() {
   const { id } = useParams();
   const { user, isAgent } = useAuth();
@@ -95,6 +99,11 @@ export default function TicketDetail() {
   const [isInternal, setIsInternal] = useState(false);
   const [showActivities, setShowActivities] = useState(false);
   const [isForwardDialogOpen, setIsForwardDialogOpen] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null); // Preview state
+  const [to, setTo] = useState([]); // Changed to array
+  const [cc, setCc] = useState([]); // Changed to array
+  const [allContacts, setAllContacts] = useState([]); // Cache for contacts
+  const [suggestedContacts, setSuggestedContacts] = useState([]);
 
   const { signature, appendSignature } = useAgentSignature(user?.id);
 
@@ -102,6 +111,31 @@ export default function TicketDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isReplyBoxOpen, setIsReplyBoxOpen] = useState(false);
+
+  // Attachments State
+  const [attachments, setAttachments] = useState([]);
+  const fileInputRef = React.useRef(null);
+  const editorRef = React.useRef(null);
+
+  // Auto-focus editor when opened
+  useEffect(() => {
+    if (isReplyBoxOpen) {
+      // Small timeout to ensure editor is mounted and ready
+      const timer = setTimeout(() => {
+        editorRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isReplyBoxOpen]);
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files);
+    setAttachments(prev => [...prev, ...files]);
+  };
+
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
 
   // Load draft from local storage
   useEffect(() => {
@@ -116,12 +150,11 @@ export default function TicketDetail() {
     if (replyContent) {
       localStorage.setItem(`ticket_reply_draft_${id}`, replyContent);
     } else {
-      // Only remove if it was previously set (handled by explicit removal on send)
-      // But if user deletes text manually, we should update LS to empty or remove.
-      // Let's just set it.
       localStorage.removeItem(`ticket_reply_draft_${id}`);
     }
   }, [replyContent, id]);
+
+
 
   useEffect(() => {
     const fetchTicket = async () => {
@@ -139,7 +172,8 @@ export default function TicketDetail() {
             author: c.user?.name || "Unknown",
             authorId: c.user?._id,
             isInternal: c.isInternal,
-            createdAt: c.createdAt
+            createdAt: c.createdAt,
+            attachments: c.attachments || [] // Map attachments
           }));
         }
 
@@ -160,7 +194,56 @@ export default function TicketDetail() {
     };
 
     fetchTicket();
+
+    // Fetch contacts for the recipient selector
+    const fetchContacts = async () => {
+      try {
+        const [contactsRes, agentsRes] = await Promise.all([
+          api.getContacts(), // Assuming this exists and returns { data: { users: [] } }
+          api.getAgents()
+        ]);
+        // Combine and dedup
+        const all = [...(contactsRes.data.users || []), ...(agentsRes.data.users || [])];
+        // Simple dedup by email
+        const unique = Array.from(new Map(all.map(item => [item.email, item])).values());
+        setAllContacts(unique);
+      } catch (e) {
+        console.error("Failed to fetch contacts/agents", e);
+      }
+    };
+    fetchContacts();
   }, [id]);
+
+  // key effect to derive suggestions when ticket loads
+  useEffect(() => {
+    if (!ticket) return;
+
+    const participants = new Map();
+
+    // Add creator
+    if (ticket.createdBy) participants.set(ticket.createdBy.email, ticket.createdBy);
+
+    // Add assignee
+    if (ticket.assignedTo) participants.set(ticket.assignedTo.email, ticket.assignedTo);
+
+    // Add commenters
+    if (ticket.messages) {
+      ticket.messages.forEach(msg => {
+        // We need email, but messages might only have author name?
+        // Wait, message authorId usually links to user.
+        // If we have access to user details from messages...
+        // The message object in frontend is mapped: author, authorId. 
+        // It doesn't have email directly in the mapped object.
+        // We can try to find the user in allContacts if we have authorId?
+        if (msg.authorId && allContacts.length > 0) {
+          const user = allContacts.find(c => c._id === msg.authorId);
+          if (user) participants.set(user.email, user);
+        }
+      });
+    }
+
+    setSuggestedContacts(Array.from(participants.values()));
+  }, [ticket, allContacts]);
 
   // Controlled state for quick action dropdowns
   const [ticketStatus, setTicketStatus] = useState(ticket?.status || "open");
@@ -200,27 +283,45 @@ export default function TicketDetail() {
     );
   }
 
+
   const handleReply = async () => {
-    // Strip HTML tags to check if content is empty
+    // Strip HTML tags to check if content is empty (ignoring empty p tags)
     const textContent = replyContent.replace(/<[^>]*>/g, "").trim();
-    if (!textContent) {
-      toast.error("Please enter a reply");
+    if (!textContent && attachments.length === 0) {
+      toast.error("Please enter a reply or add an attachment");
       return;
     }
 
     try {
       // Append signature if enabled
-      const finalMessage = appendSignature(replyContent);
+      let finalMessage = replyContent;
+      // Signature is now pre-filled, so we don't append it here to avoid duplication
+      // if (!isInternal && signature?.enabled) {
+      //   finalMessage = appendSignature(replyContent);
+      // }
 
-      const payload = {
-        message: finalMessage,
-        isInternal: isInternal
-      };
+      const payload = new FormData();
+      payload.append('message', finalMessage);
+      payload.append('isInternal', isInternal);
+
+      attachments.forEach(file => {
+        payload.append('attachments', file);
+      });
+
+      // Append To and CC
+      // Backend expects array or comma-separated. Let's send multiple fields if array.
+      if (to && to.length > 0) {
+        to.forEach(email => payload.append('to', email));
+      }
+      if (cc && cc.length > 0) {
+        cc.forEach(email => payload.append('cc', email));
+      }
 
       await api.addComment(id, payload);
 
       toast.success("Reply sent successfully");
       setReplyContent("");
+      setAttachments([]);
 
       // Refresh ticket data to show new comment
       const data = await api.getTicket(id);
@@ -232,7 +333,8 @@ export default function TicketDetail() {
         author: c.user?.name || "Unknown",
         authorId: c.user?._id,
         isInternal: c.isInternal,
-        createdAt: c.createdAt
+        createdAt: c.createdAt,
+        attachments: c.attachments // Ensure attachments are mapped back to view
       })) || [];
 
       // Ensure other fields are preserved or updated
@@ -253,7 +355,8 @@ export default function TicketDetail() {
   };
 
   const handleCannedResponseSelect = (content) => {
-    setReplyContent((prev) => (prev ? prev + "<br/><br/>" + content : content));
+    // Append to existing content
+    setReplyContent((prev) => (prev ? prev + "<br/>" + content : content));
   };
 
   const handleTimeLogged = (seconds) => {
@@ -359,7 +462,33 @@ export default function TicketDetail() {
             variant={isReplyBoxOpen ? "default" : "outline"}
             size="sm"
             className="gap-1.5 h-8"
-            onClick={() => setIsReplyBoxOpen(!isReplyBoxOpen)}
+            onClick={() => {
+              // Check if content is effectively empty (ignoring HTML tags like <p></p>)
+              const isContentEmpty = !replyContent || replyContent.replace(/<[^>]*>/g, '').trim() === '';
+
+              if (!isReplyBoxOpen && isContentEmpty) {
+                // Auto-generate template
+                const name = ticket.createdBy?.name || "Customer";
+                let template = `<p>Hi ${name},</p><p><br></p>`;
+
+                if (signature?.enabled && signature?.content) {
+                  // Basic format: Newlines to <br>, **bold** to <strong>
+                  const sigHtml = signature.content
+                    .replace(/\n/g, '<br/>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+                  // Add spacing and separator
+                  template += `<p><br/></p><p>---<br/>${sigHtml}</p>`;
+                }
+                setReplyContent(template);
+              }
+
+              if (!isReplyBoxOpen) {
+                // Pre-fill with array of emails
+                setTo(ticket.createdBy?.email ? [ticket.createdBy.email] : []);
+              }
+              setIsReplyBoxOpen(!isReplyBoxOpen);
+            }}
           >
             <Reply className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Reply</span>
@@ -453,7 +582,57 @@ export default function TicketDetail() {
               </div>
             </div>
 
-            {/* Messages */}
+            {/* Ticket Description & Attachments (Main Ticket Body) */}
+            <div className="bg-card border rounded-lg p-6 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className={`h-8 w-8 rounded-full ${getAvatarColor(ticket.createdBy?.name || "U")} flex items-center justify-center text-white font-medium text-xs`}>
+                  {(ticket.createdBy?.name || "U").charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-medium text-sm">{ticket.createdBy?.name || "Unknown User"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    reported {formatDistanceToNow(new Date(ticket.createdAt), { addSuffix: true })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <p className="whitespace-pre-wrap">{ticket.description}</p>
+              </div>
+
+              {/* Attachments */}
+              {ticket.attachments && ticket.attachments.length > 0 && (
+                <div className="pt-4 border-t">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Paperclip className="h-4 w-4" />
+                    Attachments ({ticket.attachments.length})
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {ticket.attachments.map((file, i) => {
+                      const baseUrl = API_URL.replace('/api', '');
+                      const fullUrl = file.url.startsWith('http') ? file.url : `${baseUrl}${file.url}`;
+
+                      return (
+                        <a
+                          key={i}
+                          href={fullUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-2 bg-muted/50 hover:bg-muted rounded-lg border transition-colors group"
+                        >
+                          <FileText className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-medium group-hover:underline">{file.filename}</span>
+                        </a>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator className="my-4" label="Replies" />
+
+            {/* Messages (Comments) */}
             {ticket.messages.map((message, index) => (
               <div key={message.id} className="relative">
                 {/* Internal note indicator */}
@@ -518,11 +697,37 @@ export default function TicketDetail() {
                     {/* Attachments - TODO: Implement real attachments */}
                     {message.attachments && message.attachments.length > 0 && (
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {message.attachments.map((att, i) => (
-                          <div key={i} className="flex items-center gap-2 px-3 py-2 bg-muted/50 rounded-lg border">
-                            <span className="text-sm">{att.filename || "Attachment"}</span>
-                          </div>
-                        ))}
+                        {message.attachments.map((att, i) => {
+                          // Construct full URL
+                          // API_URL is http://localhost:5000/api
+                          // We need http://localhost:5000/uploads/filename
+                          const baseUrl = API_URL.replace('/api', '');
+                          const fullUrl = att.url.startsWith('http') ? att.url : `${baseUrl}${att.url}`;
+
+                          return (
+                            <div key={i} className="flex items-center gap-1">
+                              <a
+                                href={fullUrl}
+                                download={att.filename}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 px-3 py-2 bg-muted/50 hover:bg-muted rounded-lg border transition-colors group text-primary underline"
+                              >
+                                <FileText className="h-4 w-4" />
+                                <span className="text-sm font-medium">{att.filename || "Attachment"}</span>
+                              </a>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9"
+                                onClick={() => setPreviewFile({ ...att, url: fullUrl })}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
 
@@ -536,7 +741,37 @@ export default function TicketDetail() {
                           variant="outline"
                           size="sm"
                           className="gap-1.5"
-                          onClick={() => setIsReplyBoxOpen(!isReplyBoxOpen)}
+                          onClick={() => {
+                            const paramsName = ticket.createdBy?.name || "Customer";
+                            const greetingText = `Hi ${paramsName},`;
+
+                            // Check for empty content
+                            const isContentEmpty = !replyContent || replyContent.replace(/<[^>]*>/g, '').trim() === '';
+
+                            // Check for stale greeting (has greeting but NO signature separator)
+                            // We check for the raw text because HTML can vary
+                            const hasGreeting = replyContent.includes(greetingText);
+                            const hasSignature = replyContent.includes("---");
+                            const isStaleGreeting = hasGreeting && !hasSignature;
+
+                            if (!isReplyBoxOpen && (isContentEmpty || isStaleGreeting)) {
+                              const name = ticket.createdBy?.name || "Customer";
+                              let template = `<p>Hi ${name},</p><p><br></p>`;
+
+                              if (signature?.enabled && signature?.content) {
+                                const sigHtml = signature.content
+                                  .replace(/\n/g, '<br/>')
+                                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                                template += `<p><br/></p><p>---<br/>${sigHtml}</p>`;
+                              }
+                              setReplyContent(template);
+                            }
+
+                            if (!isReplyBoxOpen) {
+                              setTo(ticket.createdBy?.email ? [ticket.createdBy.email] : []);
+                            }
+                            setIsReplyBoxOpen(!isReplyBoxOpen);
+                          }}
                         >
                           <Reply className="h-3.5 w-3.5" />
                           Reply
@@ -605,7 +840,38 @@ export default function TicketDetail() {
                   />
                 </div>
 
+                {/* To and CC Fields */}
+                <div className="px-4 py-2 border-b space-y-2 bg-muted/10">
+                  <div className="px-4 py-2 border-b space-y-2 bg-muted/10">
+                    <div className="flex items-start gap-2">
+                      <Label className="w-8 text-xs font-medium text-muted-foreground pt-2">To</Label>
+                      <div className="flex-1">
+                        <TicketRecipientSelector
+                          selectedEmails={to}
+                          onChange={setTo}
+                          contacts={allContacts}
+                          suggestedContacts={suggestedContacts}
+                          placeholder="Add recipients..."
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Label className="w-8 text-xs font-medium text-muted-foreground pt-2">Cc</Label>
+                      <div className="flex-1">
+                        <TicketRecipientSelector
+                          selectedEmails={cc}
+                          onChange={setCc}
+                          contacts={allContacts}
+                          suggestedContacts={suggestedContacts}
+                          placeholder="Add Cc..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <RichTextEditor
+                  ref={editorRef}
                   content={replyContent}
                   onChange={setReplyContent}
                   placeholder={
@@ -617,17 +883,43 @@ export default function TicketDetail() {
                   minHeight="120px"
                 />
 
-                {!isInternal && signature?.enabled && (
-                  <div className="px-4 pb-2 border-t">
-                    <SignaturePreview signature={signature} />
+                {/* Attachments List in Reply Box */}
+                {attachments.length > 0 && (
+                  <div className="px-4 py-2 border-t space-y-2">
+                    {attachments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-muted/50 rounded text-sm">
+                        <span className="truncate max-w-[80%]">{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeAttachment(index)}
+                          className="text-destructive hover:text-destructive h-6 w-6 p-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 )}
 
                 <div className="flex items-center justify-between p-3 border-t bg-muted/30">
                   <div className="flex items-center gap-2">
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
                       <Paperclip className="h-4 w-4" />
                     </Button>
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                    />
                   </div>
                   <Button onClick={handleReply}>
                     <Send className="mr-2 h-4 w-4" />
@@ -852,6 +1144,11 @@ export default function TicketDetail() {
           </Button>
         </div>
       </div>
+      <FilePreviewModal
+        isOpen={!!previewFile}
+        onClose={() => setPreviewFile(null)}
+        file={previewFile}
+      />
     </div>
   );
 }

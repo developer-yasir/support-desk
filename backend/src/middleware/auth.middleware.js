@@ -42,6 +42,11 @@ export const protect = async (req, res, next) => {
 // Authorize specific roles
 export const authorize = (...roles) => {
     return (req, res, next) => {
+        // Super Admin has access to everything
+        if (req.user.role === 'super_admin') {
+            return next();
+        }
+
         if (!roles.includes(req.user.role)) {
             return res.status(403).json({
                 status: 'error',

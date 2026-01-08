@@ -124,8 +124,27 @@ export default function CreateTicket() {
     companyName: "",
     agentId: "",
     toContacts: [],
+    toContacts: [],
     ccContacts: [],
   });
+
+  const [attachments, setAttachments] = useState([]);
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files);
+    // Simple validation (10MB limit per file example)
+    const validFiles = files.filter(file => file.size <= 10 * 1024 * 1024);
+
+    if (validFiles.length !== files.length) {
+      toast.error("Some files were skipped (max 10MB limit)");
+    }
+
+    setAttachments(prev => [...prev, ...validFiles]);
+  };
+
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -283,27 +302,22 @@ export default function CreateTicket() {
     setLoading(true);
 
     try {
-      const ticketPayload = {
-        subject: formData.subject,
-        description: formData.description,
-        category: formData.category,
-        priority: formData.priority,
-        company: formData.companyName,
-        // Send createdBy only if agent/manager and contact is selected
-        // This ensures the ticket is attributed to the contact
-        createdBy: isAgent ? formData.contactId : undefined,
-        // We can also send to/cc if backend supports them later, 
-        // currently model has no explicit to/cc but maybe in description or tags? 
-        // The user asked for it, we should probably add them to the description or if model supports.
-        // Looking at Ticket.model.js, there are no 'to' or 'cc' fields. 
-        // I will add them as tags or append to description for now to avoid breaking schema validation if strict.
-        // Wait, the user specifically asked for To/CC fields in the FORM.
-        // It's best if we just pass them. If backend ignores them that's fine for now, 
-        // but to make them useful we might need schema update.
-        // For this task scope "Dynamic Fields", I will pass them.
-      };
+      const formDataToSend = new FormData();
 
-      await api.createTicket(ticketPayload);
+      // Append simple fields
+      formDataToSend.append('subject', formData.subject);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append('category', formData.category);
+      formDataToSend.append('priority', formData.priority);
+      if (formData.companyName) formDataToSend.append('company', formData.companyName);
+      if (isAgent && formData.contactId) formDataToSend.append('createdBy', formData.contactId);
+
+      // Append attachments
+      attachments.forEach(file => {
+        formDataToSend.append('attachments', file);
+      });
+
+      await api.createTicket(formDataToSend);
 
       toast.success("Ticket created successfully!");
       navigate("/tickets");
@@ -491,8 +505,8 @@ export default function CreateTicket() {
                           <CommandGroup>
                             {contacts
                               .filter((contact) => {
-                                // Filter by selected company if preset
-                                if (formData.companyId) {
+                                // Filter by selected company if preset (unless searching)
+                                if (formData.companyId && !contactSearch) {
                                   const cId = contact.company?._id || contact.company;
                                   if (cId !== formData.companyId) return false;
                                 }
@@ -789,11 +803,46 @@ export default function CreateTicket() {
                 <p className="text-xs text-muted-foreground mt-1">
                   Max file size: 10MB
                 </p>
-                <Button variant="outline" size="sm" className="mt-4" type="button">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  type="button"
+                  onClick={() => document.getElementById('file-upload').click()}
+                >
                   Browse Files
                 </Button>
+                <input
+                  id="file-upload"
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFileChange}
+                  accept="image/*,.pdf,.doc,.docx"
+                />
               </div>
+
+              {/* Selected Files List */}
+              {attachments.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {attachments.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-muted rounded text-sm">
+                      <span className="truncate max-w-[80%]">{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeAttachment(index)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
 
             {/* Actions */}
             <div className="flex justify-end gap-4 pt-4">
@@ -903,6 +952,6 @@ export default function CreateTicket() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   );
 }

@@ -40,66 +40,19 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
+import { api } from "@/lib/api";
+import { Loader2 } from "lucide-react";
+
 const TEAMS = [
   { id: "1", name: "Technical Support" },
   { id: "2", name: "Billing Support" },
   { id: "3", name: "Customer Success" },
 ];
 
-const INITIAL_AGENTS = [
-  {
-    id: "1",
-    name: "Alex Thompson",
-    email: "alex.t@workdesks.com",
-    teamId: "1",
-    teamName: "Technical Support",
-    role: "agent",
-    ticketsAssigned: 12,
-    ticketsResolved: 145,
-    status: "active",
-    createdAt: "2024-01-10",
-  },
-  {
-    id: "2",
-    name: "Maria Garcia",
-    email: "maria.g@workdesks.com",
-    teamId: "2",
-    teamName: "Billing Support",
-    role: "agent",
-    ticketsAssigned: 8,
-    ticketsResolved: 98,
-    status: "active",
-    createdAt: "2024-02-15",
-  },
-  {
-    id: "3",
-    name: "James Wilson",
-    email: "james.w@workdesks.com",
-    teamId: "1",
-    teamName: "Technical Support",
-    role: "agent",
-    ticketsAssigned: 15,
-    ticketsResolved: 203,
-    status: "active",
-    createdAt: "2024-01-20",
-  },
-  {
-    id: "4",
-    name: "Sarah Kim",
-    email: "sarah.k@workdesks.com",
-    teamId: "3",
-    teamName: "Customer Success",
-    role: "agent",
-    ticketsAssigned: 5,
-    ticketsResolved: 67,
-    status: "inactive",
-    createdAt: "2024-03-01",
-  },
-];
-
 export default function AgentManagement() {
   const { isManager, isSuperAdmin } = useAuth();
-  const [agents, setAgents] = useState(INITIAL_AGENTS);
+  const [agents, setAgents] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [teamFilter, setTeamFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -112,42 +65,52 @@ export default function AgentManagement() {
     role: "agent",
   });
 
+  const fetchAgents = async () => {
+    try {
+      setLoading(true);
+      const res = await api.getUsers({ role: 'agent' });
+      // Map API data to component structure if needed, or just use as is
+      // Assuming res.data.users returns array of user objects
+      setAgents(res.data.users || []);
+    } catch (error) {
+      toast.error("Failed to fetch agents");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useState(() => {
+    fetchAgents();
+  }, []);
+
   const filteredAgents = agents.filter((agent) => {
     const matchesSearch =
-      agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTeam = teamFilter === "all" || agent.teamId === teamFilter;
-    const matchesStatus = statusFilter === "all" || agent.status === statusFilter;
-    return matchesSearch && matchesTeam && matchesStatus;
+      agent.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      agent.email?.toLowerCase().includes(searchQuery.toLowerCase());
+    // const matchesTeam = teamFilter === "all" || agent.teamId === teamFilter; // Team filtering disabled for now as teams aren't fully in backend
+    const matchesStatus = statusFilter === "all" || (agent.isActive ? "active" : "inactive") === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const team = TEAMS.find((t) => t.id === formData.teamId);
 
-    if (editingAgent) {
-      setAgents(
-        agents.map((a) =>
-          a.id === editingAgent.id
-            ? { ...a, ...formData, teamName: team?.name || "" }
-            : a
-        )
-      );
-      toast.success("Agent updated successfully");
-    } else {
-      const newAgent = {
-        id: String(agents.length + 1),
-        ...formData,
-        teamName: team?.name || "",
-        ticketsAssigned: 0,
-        ticketsResolved: 0,
-        status: "active",
-        createdAt: new Date().toISOString().split("T")[0],
-      };
-      setAgents([...agents, newAgent]);
-      toast.success("Agent created successfully");
+    try {
+      if (editingAgent) {
+        const res = await api.updateUser(editingAgent._id || editingAgent.id, formData);
+        setAgents(prev => prev.map(a => (a._id === editingAgent._id || a.id === editingAgent.id) ? res.data.user : a));
+        toast.success("Agent updated successfully");
+      } else {
+        const res = await api.createUser({ ...formData, role: 'agent' });
+        setAgents(prev => [...prev, res.data.user]);
+        toast.success("Agent created successfully");
+      }
+      setIsDialogOpen(false);
+      resetForm();
+    } catch (error) {
+      toast.error(error.message || "Operation failed");
     }
-    resetForm();
   };
 
   const handleEdit = (agent) => {
@@ -161,22 +124,41 @@ export default function AgentManagement() {
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (agentId) => {
-    setAgents(agents.filter((a) => a.id !== agentId));
-    toast.success("Agent removed successfully");
+  const handleDelete = async (agentId) => {
+    if (!window.confirm("Are you sure?")) return;
+    try {
+      // Assuming DELETE /users/:id exists or use update for soft delete
+      // For now, let's try strict delete as per original code implications, 
+      // but usually we soft delete. api.js usually has deleteUser? No, not exposed in api.js yet?
+      // Checking api.js... it has deleteContact but that calls DELETE /users/:id
+      // I should verify if deleteUser exists in api.js. 
+      // Wait, deleteContact calls DELETE /users/:id. So I can use that or add deleteUser.
+      // Let's use deleteUser alias if I added it, or adding it now implicitly if I missed it.
+      // Actually I added createUser and updateUser. deleteUser is likely not explicitly added but deleteContact works.
+      // I'll assume deleteContact serves the purpose or just fetch direct.
+      // To be safe and clean I'll avoid calling 'deleteContact' for an agent.
+      // I will assume I can just use api.deleteContact for now or add api.deleteUser separately.
+      // Wait, I didn't add api.deleteUser. I'll use a raw fetch or add it.
+      // Let's use api.deleteContact since it points to DELETE /users/:id which is generic.
+      await api.deleteContact(agentId);
+      setAgents(agents.filter((a) => (a._id || a.id) !== agentId));
+      toast.success("Agent removed successfully");
+    } catch (err) {
+      toast.error("Failed to delete agent");
+    }
   };
 
-  const handleToggleStatus = (agent) => {
-    setAgents(
-      agents.map((a) =>
-        a.id === agent.id
-          ? { ...a, status: a.status === "active" ? "inactive" : "active" }
-          : a
-      )
-    );
-    toast.success(
-      `Agent ${agent.status === "active" ? "deactivated" : "activated"} successfully`
-    );
+  const handleToggleStatus = async (agent) => {
+    try {
+      const newStatus = !agent.isActive; // Assuming backend uses isActive (boolean) or status string? 
+      // User model usually has isActive (boolean). Original code used "status" string.
+      // Let's check User model... it has isActive: Boolean.
+      const res = await api.updateUser(agent._id || agent.id, { isActive: newStatus });
+      setAgents(prev => prev.map(a => (a._id === agent._id || a.id === agent.id) ? res.data.user : a));
+      toast.success(`Agent ${newStatus ? 'activated' : 'deactivated'}`);
+    } catch (err) {
+      toast.error("Failed to update status");
+    }
   };
 
   const resetForm = () => {

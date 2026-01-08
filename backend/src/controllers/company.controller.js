@@ -6,7 +6,11 @@ import User from '../models/User.model.js';
 // @access  Private
 export const getCompanies = async (req, res) => {
     try {
-        let query = {};
+        const { type } = req.query;
+
+        if (type) {
+            query.type = type;
+        }
 
         // If manager, only show their own company OR companies they created
         if (req.user.role === 'manager') {
@@ -60,9 +64,12 @@ export const getCompany = async (req, res) => {
 // @access  Private/Manager
 export const createCompany = async (req, res) => {
     try {
-        const { name, domain, industry, notes } = req.body;
+        const { name, domain, industry, notes, type } = req.body;
 
-        const companyExists = await Company.findOne({ name });
+        const companyExists = await Company.findOne({
+            name,
+            createdBy: req.user.id
+        });
 
         if (companyExists) {
             return res.status(400).json({
@@ -76,6 +83,7 @@ export const createCompany = async (req, res) => {
             domain,
             industry,
             notes,
+            type: type || 'client-company',
             createdBy: req.user.id
         });
 

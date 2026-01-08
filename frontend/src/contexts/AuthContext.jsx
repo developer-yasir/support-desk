@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
   const normalizeRole = (role) => {
     if (!role) return role;
     if (role === "manager") return "company_manager";
-    if (role === "admin") return "superadmin";
+    if (role === "admin" || role === "super_admin") return "superadmin";
     return role;
   };
 

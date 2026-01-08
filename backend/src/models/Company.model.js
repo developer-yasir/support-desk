@@ -4,8 +4,12 @@ const companySchema = new mongoose.Schema({
     name: {
         type: String,
         required: [true, 'Please provide a company name'],
-        trim: true,
-        unique: true
+        trim: true
+    },
+    type: {
+        type: String,
+        enum: ['main-company', 'client-company'],
+        default: 'client-company'
     },
     domain: {
         type: String,
@@ -34,6 +38,9 @@ const companySchema = new mongoose.Schema({
 }, {
     timestamps: true
 });
+
+// Enforce unique company name per user
+companySchema.index({ name: 1, createdBy: 1 }, { unique: true });
 
 const Company = mongoose.model('Company', companySchema);
 

@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -29,23 +30,62 @@ const DEFAULT_SIGNATURES = {
     enabled: true,
     content: "Let me know if you need anything else!\n\n**Mike Johnson**\nTechnical Support Engineer\n🔧 Here to help!",
   },
+  "3": {
+    enabled: true,
+    content: "Kind regards,\n**Support Agent**\nCustomer Success Team",
+  },
+  "1": {
+    enabled: true,
+    content: "Sincerely,\n**Administrator**\nWorkDesks Admin Team",
+  }
 };
 
 export function useAgentSignature(agentId) {
-  const [signatures, setSignatures] = useState(DEFAULT_SIGNATURES);
+  // Initialize from localStorage or defaults
+  const [signatures, setSignatures] = useState(() => {
+    const saved = localStorage.getItem("agent_signatures");
+    return saved ? JSON.parse(saved) : DEFAULT_SIGNATURES;
+  });
 
-  const signature = signatures[agentId];
-  
+  // Listen for updates from other instances
+  React.useEffect(() => {
+    const handleUpdate = (e) => {
+      if (e.detail) {
+        setSignatures(e.detail);
+      } else {
+        const saved = localStorage.getItem("agent_signatures");
+        if (saved) setSignatures(JSON.parse(saved));
+      }
+    };
+
+    window.addEventListener("agent_signature_updated", handleUpdate);
+    return () => window.removeEventListener("agent_signature_updated", handleUpdate);
+  }, []);
+
+  // Save to localStorage whenever signatures change
+  React.useEffect(() => {
+    localStorage.setItem("agent_signatures", JSON.stringify(signatures));
+  }, [signatures]);
+
+  // Fallback to a default if not found
+  const signature = signatures[agentId] || {
+    enabled: true,
+    content: "Best regards,\n**Support Team**"
+  };
+
   const appendSignature = (message) => {
     if (!signature?.enabled || !signature?.content) return message;
     return message.trim() + "\n\n---\n" + signature.content;
   };
 
   const updateSignature = (content, enabled) => {
-    setSignatures((prev) => ({
-      ...prev,
+    const newSignatures = {
+      ...signatures,
       [agentId]: { content, enabled },
-    }));
+    };
+    setSignatures(newSignatures);
+    localStorage.setItem("agent_signatures", JSON.stringify(newSignatures));
+    window.dispatchEvent(new CustomEvent("agent_signature_updated", { detail: newSignatures }));
   };
 
   return {
@@ -84,6 +124,9 @@ export function AgentSignatureSettings({ agentId, trigger }) {
             <PenLine className="h-5 w-5" />
             Email Signature
           </DialogTitle>
+          <DialogDescription>
+            Create a signature to be automatically appended to your ticket replies.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">

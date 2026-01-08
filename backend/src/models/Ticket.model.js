@@ -41,6 +41,10 @@ const ticketSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    companyId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Company'
+    },
     tags: [{
         type: String
     }],
@@ -55,6 +59,8 @@ const ticketSchema = new mongoose.Schema({
             ref: 'User'
         },
         message: String,
+        to: [String], // Array of email addresses
+        cc: [String], // Array of email addresses
         isInternal: {
             type: Boolean,
             default: false
@@ -62,7 +68,12 @@ const ticketSchema = new mongoose.Schema({
         createdAt: {
             type: Date,
             default: Date.now
-        }
+        },
+        attachments: [{
+            filename: String,
+            url: String,
+            uploadedAt: Date
+        }]
     }],
     dueDate: {
         type: Date
