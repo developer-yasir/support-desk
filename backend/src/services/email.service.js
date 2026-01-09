@@ -50,7 +50,7 @@ export async function sendEmail(company, { to, subject, html, text }) {
         }
 
         // Create transporter
-        const transporter = nodemailer.createTransporter({
+        const transporter = nodemailer.createTransport({
             host: config.host,
             port: config.port,
             secure: config.secure,
@@ -85,7 +85,7 @@ export async function sendEmail(company, { to, subject, html, text }) {
  */
 export async function testEmailConfig(emailConfig, testRecipient) {
     try {
-        const transporter = nodemailer.createTransporter({
+        const transporter = nodemailer.createTransport({
             host: emailConfig.host,
             port: emailConfig.port || 587,
             secure: emailConfig.secure || false,
@@ -172,6 +172,168 @@ export function generateTicketReplyEmail(ticket, comment) {
                 <div class="footer">
                     <p>This is an automated message from ${ticket.company?.name || 'Support Desk'}.</p>
                     <p>Please do not reply to this email directly.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+/**
+ * Generate HTML email template for new ticket creation
+ * @param {Object} ticket - Ticket object
+ * @param {Object} creator - User object who created the ticket
+ * @returns {string} - HTML email content
+ */
+/**
+ * Generate HTML email template for new ticket creation
+ * @param {Object} ticket - Ticket object
+ * @param {Object} creator - User object who created the ticket
+ * @returns {string} - HTML email content
+ */
+export function generateNewTicketEmail(ticket, creator) {
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+            <style>
+                body { 
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+                    background-color: #f6f9fc; 
+                    margin: 0; 
+                    padding: 0; 
+                    color: #333333;
+                    -webkit-font-smoothing: antialiased;
+                }
+                .wrapper {
+                    width: 100%;
+                    background-color: #f6f9fc;
+                    padding: 40px 0;
+                }
+                .container { 
+                    max-width: 580px; 
+                    margin: 0 auto; 
+                    background-color: #ffffff;
+                    border-radius: 8px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                    overflow: hidden;
+                }
+                .header {
+                    padding: 30px 40px;
+                    border-bottom: 1px solid #f0f0f0;
+                }
+                .logo {
+                    font-size: 20px;
+                    font-weight: 700;
+                    color: #0F172A;
+                    text-decoration: none;
+                }
+                .content { 
+                    padding: 40px 40px; 
+                }
+                h1 {
+                    font-size: 22px;
+                    font-weight: 600;
+                    margin: 0 0 20px;
+                    color: #1a1a1a;
+                }
+                p { 
+                    font-size: 15px;
+                    line-height: 24px;
+                    margin: 0 0 20px;
+                    color: #444;
+                }
+                .ticket-box {
+                    background-color: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 6px;
+                    padding: 24px;
+                    margin: 24px 0;
+                }
+                .item-label {
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    color: #64748b;
+                    font-weight: 600;
+                    margin-bottom: 4px;
+                }
+                .item-value {
+                    font-size: 15px;
+                    font-weight: 500;
+                    color: #0f172a;
+                    margin-bottom: 16px;
+                }
+                .item-value.last { margin-bottom: 0; }
+                .description-text {
+                    color: #334155;
+                    font-size: 15px;
+                    line-height: 1.6;
+                    white-space: pre-wrap;
+                }
+                .item-value.subject {
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: #0f172a;
+                }
+                .btn-container {
+                    text-align: center;
+                    margin-top: 32px;
+                    padding-bottom: 10px;
+                }
+                .btn { 
+                    display: inline-block; 
+                    background-color: #0F172A; 
+                    color: #ffffff !important; 
+                    padding: 14px 32px; 
+                    text-decoration: none; 
+                    border-radius: 6px; 
+                    font-size: 16px; 
+                    font-weight: 600;
+                    box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.1), 0 2px 4px -1px rgba(15, 23, 42, 0.06);
+                }
+                .footer { 
+                    padding: 30px 40px; 
+                    background-color: #fcfcfc;
+                    border-top: 1px solid #f0f0f0;
+                    font-size: 13px; 
+                    color: #94a3b8; 
+                    text-align: center;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="wrapper">
+                <div class="container">
+                    <div class="header">
+                        <span class="logo">${ticket.company || 'Support Desk'}</span>
+                    </div>
+                    
+                    <div class="content">
+                        <h1>Hi ${creator.name},</h1>
+                        <p>We've received your request. A support ticket has been created and our team will be in touch shortly.</p>
+
+                        <div class="ticket-box">
+                            <div class="item-label">Ticket ID</div>
+                            <div class="item-value">#${ticket.ticketNumber || ticket._id.toString().slice(-6)}</div>
+
+                            <div class="item-label">Subject</div>
+                            <div class="item-value subject">${ticket.subject}</div>
+
+                            <div class="item-label">Description</div>
+                            <div class="description-text">${ticket.description}</div>
+                        </div>
+
+                        <div class="btn-container">
+                            <a href="${process.env.FRONTEND_URL}/tickets/${ticket._id}" class="btn">View Ticket</a>
+                        </div>
+                    </div>
+
+                    <div class="footer">
+                        Sent by ${ticket.company || 'Support Desk'}<br>
+                        Please do not reply to this email directly.
+                    </div>
                 </div>
             </div>
         </body>

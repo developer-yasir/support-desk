@@ -2,7 +2,7 @@ import crypto from 'crypto';
 
 // Encryption key from environment variable
 // Generate with: crypto.randomBytes(32).toString('hex')
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString('hex');
+// const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY; // Moved inside functions for safer lazy loading
 const algorithm = 'aes-256-cbc';
 
 /**
@@ -14,6 +14,11 @@ export function encrypt(text) {
     if (!text) return '';
 
     try {
+        const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+        if (!ENCRYPTION_KEY) {
+            throw new Error('ENCRYPTION_KEY not found in environment variables');
+        }
+
         const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
         const iv = crypto.randomBytes(16);
         const cipher = crypto.createCipheriv(algorithm, key, iv);
@@ -40,6 +45,11 @@ export function decrypt(text) {
         const parts = text.split(':');
         if (parts.length !== 2) {
             throw new Error('Invalid encrypted format');
+        }
+
+        const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+        if (!ENCRYPTION_KEY) {
+            throw new Error('ENCRYPTION_KEY not found in environment variables');
         }
 
         const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
