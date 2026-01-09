@@ -13,6 +13,7 @@ const MOCK_USERS = [
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   const normalizeRole = (role) => {
     if (!role) return role;
@@ -24,15 +25,18 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const savedUser = localStorage.getItem("workdesks_user");
     const token = localStorage.getItem("workdesks_token");
+    const savedNeedsSetup = localStorage.getItem("workdesks_needs_setup");
 
     if (savedUser && token) {
       try {
         const parsed = JSON.parse(savedUser);
         setUser({ ...parsed, role: normalizeRole(parsed.role) });
+        setNeedsSetup(savedNeedsSetup === "true");
       } catch (e) {
         console.error("Failed to parse user", e);
         localStorage.removeItem("workdesks_user");
         localStorage.removeItem("workdesks_token");
+        localStorage.removeItem("workdesks_needs_setup");
       }
     }
     setLoading(false);
@@ -41,14 +45,16 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     try {
       const data = await api.login(email, password);
-      // data.data.user, data.data.token
-      const { user: userData, token } = data.data;
+      // data.data.user, data.data.token, data.data.needsSetup
+      const { user: userData, token, needsSetup: setupRequired } = data.data;
 
       const normalizedUser = { ...userData, role: normalizeRole(userData.role) };
 
       setUser(normalizedUser);
+      setNeedsSetup(setupRequired || false);
       localStorage.setItem("workdesks_user", JSON.stringify(normalizedUser));
       localStorage.setItem("workdesks_token", token);
+      localStorage.setItem("workdesks_needs_setup", String(setupRequired || false));
 
       return { success: true };
     } catch (error) {
@@ -59,13 +65,15 @@ export function AuthProvider({ children }) {
   const register = async (data) => {
     try {
       const res = await api.register(data);
-      const { user: userData, token } = res.data;
+      const { user: userData, token, needsSetup: setupRequired } = res.data;
 
       const normalizedUser = { ...userData, role: normalizeRole(userData.role) };
 
       setUser(normalizedUser);
+      setNeedsSetup(setupRequired || false);
       localStorage.setItem("workdesks_user", JSON.stringify(normalizedUser));
       localStorage.setItem("workdesks_token", token);
+      localStorage.setItem("workdesks_needs_setup", String(setupRequired || false));
 
       return { success: true };
     } catch (error) {
@@ -75,8 +83,27 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     setUser(null);
+    setNeedsSetup(false);
     localStorage.removeItem("workdesks_user");
     localStorage.removeItem("workdesks_token");
+    localStorage.removeItem("workdesks_needs_setup");
+  };
+
+  const completeSetup = () => {
+    setNeedsSetup(false);
+    localStorage.setItem("workdesks_needs_setup", "false");
+  };
+
+  const updateUserCompany = (updatedCompany) => {
+    if (!user) return;
+
+    const updatedUser = {
+      ...user,
+      company: updatedCompany
+    };
+
+    setUser(updatedUser);
+    localStorage.setItem("workdesks_user", JSON.stringify(updatedUser));
   };
 
   const value = {
@@ -85,6 +112,9 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    completeSetup,
+    updateUserCompany,
+    needsSetup,
     isSuperAdmin: user?.role === "superadmin",
     isManager: user?.role === "company_manager" || user?.role === "superadmin",
     isAgent: user?.role === "agent" || user?.role === "company_manager" || user?.role === "superadmin",

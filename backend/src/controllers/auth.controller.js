@@ -71,19 +71,27 @@ export const register = async (req, res) => {
             phone
         });
 
+        // Populate company data for response
+        const populatedUser = await User.findById(user._id).populate('company');
+
         // Generate token
         const token = generateToken(user._id);
+
+        // Check if manager needs to complete company setup
+        const needsSetup = role === 'manager' && companyId;
 
         res.status(201).json({
             status: 'success',
             data: {
                 user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    role: user.role
+                    id: populatedUser._id,
+                    name: populatedUser.name,
+                    email: populatedUser.email,
+                    role: populatedUser.role,
+                    company: populatedUser.company
                 },
-                token
+                token,
+                needsSetup
             }
         });
     } catch (error) {
@@ -110,7 +118,7 @@ export const login = async (req, res) => {
         const { email, password } = req.body;
 
         // Check for user
-        const user = await User.findOne({ email }).select('+password');
+        const user = await User.findOne({ email }).select('+password').populate('company');
         if (!user) {
             return res.status(401).json({
                 status: 'error',
@@ -127,12 +135,11 @@ export const login = async (req, res) => {
             });
         }
 
-        // Update last login
-        user.lastLogin = new Date();
-        await user.save();
-
         // Generate token
         const token = generateToken(user._id);
+
+        // Check if manager needs to complete company setup
+        const needsSetup = user.role === 'manager' && user.company && !user.company.setupCompleted;
 
         res.status(200).json({
             status: 'success',
@@ -141,11 +148,16 @@ export const login = async (req, res) => {
                     id: user._id,
                     name: user.name,
                     email: user.email,
-                    role: user.role
+                    role: user.role,
+                    company: user.company
                 },
-                token
+                token,
+                needsSetup
             }
         });
+        // Update last login
+        user.lastLogin = new Date();
+        await user.save();
     } catch (error) {
         res.status(500).json({
             status: 'error',

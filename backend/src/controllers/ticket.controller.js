@@ -1,6 +1,7 @@
 import Ticket from '../models/Ticket.model.js';
 import Company from '../models/Company.model.js';
 import User from '../models/User.model.js';
+import { sendEmail, generateTicketReplyEmail } from '../services/email.service.js';
 
 // @desc    Get all tickets
 // @route   GET /api/tickets
@@ -289,6 +290,54 @@ export const addComment = async (req, res) => {
             .populate('createdBy', 'name email')
             .populate('assignedTo', 'name email')
             .populate('comments.user', 'name email');
+
+        // Send Email Notification
+        try {
+            // Only send if the reply is NOT internal
+            if (!isInternal) {
+                // Get sender's company for email config
+                let senderCompany = null;
+                if (req.user.company) {
+                    senderCompany = await Company.findById(req.user.company);
+                }
+
+                // Determine recipients
+                const recipients = new Set([...toEmails, ...ccEmails]);
+
+                // If the creator didn't send the comment, notify them
+                if (ticket.createdBy && ticket.createdBy.toString() !== req.user.id) {
+                    // Fetch creator email if not populated
+                    const creator = await User.findById(ticket.createdBy);
+                    if (creator && creator.email) {
+                        recipients.add(creator.email);
+                    }
+                }
+
+                // Remove the sender from recipients (don't email yourself)
+                recipients.delete(req.user.email);
+
+                if (recipients.size > 0 && senderCompany) {
+                    const emailHtml = generateTicketReplyEmail(updatedTicket, comment);
+
+                    // Send to each recipient
+                    for (const recipient of recipients) {
+                        try {
+                            await sendEmail(senderCompany, {
+                                to: recipient,
+                                subject: `Re: ${ticket.subject} [#${ticket.ticketNumber || ticket._id.toString().slice(-6)}]`,
+                                html: emailHtml,
+                                text: `New reply on ticket: ${message}`
+                            });
+                        } catch (emailErr) {
+                            console.error(`Failed to send email to ${recipient}:`, emailErr.message);
+                            // Don't fail the request if email fails, just log it
+                        }
+                    }
+                }
+            }
+        } catch (emailError) {
+            console.error("Email notification error:", emailError);
+        }
 
         res.status(200).json({
             status: 'success',

@@ -31,10 +31,50 @@ const companySchema = new mongoose.Schema({
         type: String,
         default: ''
     },
-    createdBy: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+    setupCompleted: {
+        type: Boolean,
+        default: false
+    },
+    emailConfig: {
+        enabled: {
+            type: Boolean,
+            default: false
+        },
+        host: {
+            type: String,
+            trim: true
+        },
+        port: {
+            type: Number
+        },
+        secure: {
+            type: Boolean,
+            default: false
+        },
+        user: {
+            type: String,
+            trim: true
+        },
+        pass: {
+            type: String  // Will be encrypted
+        },
+        type: String,
+        trim: true
+    },
+    notifications: {
+        type: Map,
+        of: new mongoose.Schema({
+            enabled: { type: Boolean, default: true },
+            subject: { type: String },
+            body: { type: String }
+        }, { _id: false }),
+        default: {}
     }
+},
+    createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+}
 }, {
     timestamps: true
 });

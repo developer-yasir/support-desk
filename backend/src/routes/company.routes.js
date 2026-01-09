@@ -4,7 +4,9 @@ import {
     getCompany,
     createCompany,
     updateCompany,
-    deleteCompany
+    deleteCompany,
+    updateEmailConfig,
+    testEmail
 } from '../controllers/company.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 
@@ -21,5 +23,12 @@ router.route('/:id')
     .get(getCompany)
     .put(authorize('manager', 'admin', 'super_admin'), updateCompany)
     .delete(authorize('manager', 'admin', 'super_admin'), deleteCompany);
+
+// Email configuration routes
+router.route('/:id/email-config')
+    .put(authorize('manager', 'admin', 'super_admin'), updateEmailConfig);
+
+router.route('/:id/test-email')
+    .post(authorize('manager', 'admin', 'super_admin'), testEmail);
 
 export default router;

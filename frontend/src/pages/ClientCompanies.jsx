@@ -39,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import CompanyLogoUpload from "@/components/CompanyLogoUpload";
 
 export default function ClientCompanies() {
   const { isManager, isSuperAdmin } = useAuth();
@@ -137,6 +138,20 @@ export default function ClientCompanies() {
     setIsDialogOpen(false);
   };
 
+  const handleLogoUpdate = async (logoData) => {
+    if (!editingCompany) return;
+
+    try {
+      await api.updateCompany(editingCompany._id, { logo: logoData });
+      toast.success("Logo updated successfully");
+      fetchCompanies();
+      // Update the editing company to reflect the change
+      setEditingCompany({ ...editingCompany, logo: logoData });
+    } catch (error) {
+      throw new Error(error.message || "Failed to update logo");
+    }
+  };
+
   const toggleExpanded = (companyId) => {
     setExpandedCompany(expandedCompany === companyId ? null : companyId);
   };
@@ -225,6 +240,16 @@ export default function ClientCompanies() {
                       rows={3}
                     />
                   </div>
+
+                  {/* Logo Upload - Only for editing existing companies */}
+                  {editingCompany && (
+                    <div className="pt-2 border-t">
+                      <CompanyLogoUpload
+                        company={editingCompany}
+                        onLogoUpdate={handleLogoUpdate}
+                      />
+                    </div>
+                  )}
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={resetForm}>
