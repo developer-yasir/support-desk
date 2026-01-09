@@ -1,7 +1,7 @@
 import Ticket from '../models/Ticket.model.js';
 import Company from '../models/Company.model.js';
 import User from '../models/User.model.js';
-import { sendEmail, generateTicketReplyEmail } from '../services/email.service.js';
+import { sendEmail, generateTicketReplyEmail, generateNewTicketEmail } from '../services/email.service.js';
 
 // @desc    Get all tickets
 // @route   GET /api/tickets
@@ -126,10 +126,15 @@ export const createTicket = async (req, res) => {
             creatorId = req.body.createdBy;
         }
 
+        // Fetch creator's details to get company info
+        const creator = await User.findById(creatorId).populate('company');
+
         const ticketData = {
             ...req.body,
             createdBy: creatorId,
-            status: 'open' // Enforce default status
+            status: 'open', // Enforce default status
+            companyId: creator.company ? creator.company._id : undefined,
+            company: creator.company ? creator.company.name : ''
         };
 
         // Handle attachments
@@ -142,6 +147,49 @@ export const createTicket = async (req, res) => {
         }
 
         const ticket = await Ticket.create(ticketData);
+
+        // Send Email Notification to Creator (and potential CCs if passed)
+        try {
+            // Get Company for email settings
+            let company = null;
+            if (creator.company) {
+                // Already populated above
+                company = creator.company;
+            } else if (ticketData.companyId) {
+                company = await Company.findById(ticketData.companyId);
+            }
+
+            // Check if notification is enabled (default to true if not specified)
+            const isEnabled = company?.emailConfig?.notifications?.new_ticket_requester?.enabled ?? true;
+
+            if (isEnabled) {
+                const emailHtml = generateNewTicketEmail(ticket, creator);
+
+                // Recipients: Creator + any To/CC provided in body (if UI supports it)
+                // Note: Frontend might strictly be using 'addComment' for CC, but if creating new ticket, 
+                // we usually send to creator.
+                const recipients = [creator.email];
+
+                // If body has to/cc (optional support)
+                if (req.body.cc) {
+                    const ccs = typeof req.body.cc === 'string' ? req.body.cc.split(',') : req.body.cc;
+                    recipients.push(...ccs);
+                }
+
+                for (const recipient of recipients) {
+                    if (!recipient) continue;
+                    await sendEmail(company, {
+                        to: recipient,
+                        subject: `Request Received: ${ticket.subject} [#${ticket.ticketNumber || ticket._id.toString().slice(-6)}]`,
+                        html: emailHtml,
+                        text: `Ticket Created: ${ticket.subject}`
+                    });
+                }
+            }
+        } catch (emailError) {
+            console.error("Failed to send ticket creation email:", emailError);
+            // Non-blocking error
+        }
 
         res.status(201).json({
             status: 'success',
@@ -428,8 +476,43 @@ export const forwardTicket = async (req, res) => {
 // @access  Private
 export const getTicketStats = async (req, res) => {
     try {
+        let matchStage = {};
+
+        // Apply role-based filtering (logic shared with getTickets)
+        if (req.user.role === 'customer') {
+            matchStage.createdBy = req.user.id;
+        } else if (req.user.role === 'manager') {
+            let allowedCompanyNames = [];
+
+            if (req.user.company) {
+                const employerCompany = await Company.findById(req.user.company);
+                if (employerCompany) {
+                    allowedCompanyNames.push(employerCompany.name);
+                }
+            }
+
+            const createdCompanies = await Company.find({ createdBy: req.user.id });
+            const createdCompanyNames = createdCompanies.map(c => c.name);
+            allowedCompanyNames = [...allowedCompanyNames, ...createdCompanyNames];
+
+            if (allowedCompanyNames.length > 0) {
+                matchStage.$or = [
+                    { company: { $in: allowedCompanyNames } },
+                    { createdBy: req.user.id }
+                ];
+            } else {
+                matchStage.createdBy = req.user.id;
+            }
+        } else if (req.user.role === 'agent') {
+            const hasFullAccess = req.user.permissions && req.user.permissions.includes('view_all_tickets');
+            if (!hasFullAccess) {
+                matchStage.assignedTo = req.user.id;
+            }
+        }
+
         // 1. Get counts by status
         const statusStats = await Ticket.aggregate([
+            { $match: matchStage },
             {
                 $group: {
                     _id: '$status',
@@ -440,6 +523,7 @@ export const getTicketStats = async (req, res) => {
 
         // 2. Get counts by priority
         const priorityStats = await Ticket.aggregate([
+            { $match: matchStage },
             {
                 $group: {
                     _id: '$priority',
@@ -449,18 +533,25 @@ export const getTicketStats = async (req, res) => {
         ]);
 
         // 3. Get total tickets
-        const totalTickets = await Ticket.countDocuments();
+        // Note: countDocuments supports a query filter, so we use matchStage directly (if it's a simple object)
+        // However, matchStage can contain $or, which countDocuments handles.
+        // BUT if matchStage is {}, it counts all.
+        const totalTickets = await Ticket.countDocuments(matchStage);
 
         // 4. Get tickets created in last 7 days (volume)
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-        const volumeStats = await Ticket.aggregate([
-            {
-                $match: {
-                    createdAt: { $gte: sevenDaysAgo }
-                }
-            },
+        // Combine matchStage with date filter
+        const volumeMatch = { ...matchStage, createdAt: { $gte: sevenDaysAgo } };
+        // NOTE: matchStage might have $or. We need to be careful merging.
+        // Correct way: use $and if matchStage has complex logic, or just merge if simple.
+        // If matchStage has $or, we can't just spread it if we want to AND it with createdAt.
+        // Safer approach for aggregate: use $match pipeline stages.
+
+        const volumePipeline = [
+            { $match: matchStage }, // Filter by role first
+            { $match: { createdAt: { $gte: sevenDaysAgo } } }, // Then by date
             {
                 $group: {
                     _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
@@ -468,7 +559,9 @@ export const getTicketStats = async (req, res) => {
                 }
             },
             { $sort: { _id: 1 } }
-        ]);
+        ];
+
+        const volumeStats = await Ticket.aggregate(volumePipeline);
 
         // Format data for frontend
         const stats = {

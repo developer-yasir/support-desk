@@ -60,6 +60,12 @@
 - **Keyboard First**: `Alt+K` shortcuts for navigation.
 - **Persistent Filters**: Smart filtering that remembers preferences.
 
+### 📧 Email Notifications
+- **Automated Alerts**: Instant email notifications for ticket creation and updates.
+- **Custom Patterns**: Professional, polished HTML email templates (SaaS style).
+- **Secure Configuration**: SMTP credentials encrypted using AES-256 for maximum security.
+- **Testing**: Built-in tools for admins to test SMTP channels.
+
 ---
 
 ## 🏗️ System Architecture
@@ -152,7 +158,10 @@ erDiagram
 - **Framework**: Express.js
 - **Database**: MongoDB, Mongoose
 - **Auth**: JWT (jsonwebtoken), bcryptjs
+- **Auth**: JWT (jsonwebtoken), bcryptjs
 - **Validation**: express-validator
+- **Email**: Nodemailer (SMTP)
+- **Security**: AES-256 Encryption (for sensitive credentials)
 
 ---
 
@@ -178,7 +187,12 @@ erDiagram
     # Create .env file
     echo "PORT=5000
     MONGODB_URI=mongodb://localhost:27017/supportdesk
-    JWT_SECRET=super_secret_key" > .env
+    JWT_SECRET=super_secret_key
+    FRONTEND_URL=http://localhost:5173
+    EMAIL_HOST=smtp.gmail.com
+    EMAIL_USER=your-email@gmail.com
+    EMAIL_PASS=your-app-password
+    ENCRYPTION_KEY=your-64-byte-hex-key" > .env
     
     # Run Server
     npm run dev

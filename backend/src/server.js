@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import morgan from 'morgan';
 import { connectDB } from './config/database.js';
 
@@ -11,8 +11,8 @@ import userRoutes from './routes/user.routes.js';
 import companyRoutes from './routes/company.routes.js';
 import reportRoutes from './routes/report.routes.js';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables (Moved to top import)
+// dotenv.config();
 
 // Initialize Express app
 const app = express();
@@ -22,7 +22,7 @@ connectDB();
 
 // Middleware
 app.use(cors({
-  origin: [process.env.FRONTEND_URL, 'http://localhost:8080', 'http://localhost:5173'],
+  origin: true, // Allow all origins (reflects request origin)
   credentials: true
 }));
 app.use(express.json());

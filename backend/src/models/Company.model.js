@@ -58,8 +58,7 @@ const companySchema = new mongoose.Schema({
         pass: {
             type: String  // Will be encrypted
         },
-        type: String,
-        trim: true
+
     },
     notifications: {
         type: Map,
@@ -69,12 +68,11 @@ const companySchema = new mongoose.Schema({
             body: { type: String }
         }, { _id: false }),
         default: {}
-    }
-},
+    },
     createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-}
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }
 }, {
     timestamps: true
 });

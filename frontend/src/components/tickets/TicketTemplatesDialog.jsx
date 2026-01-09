@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,9 @@ export default function TicketTemplatesDialog({ onSelect, trigger }) {
             <FileText className="h-5 w-5" />
             Ticket Templates
           </DialogTitle>
+          <DialogDescription>
+            Select a template to quickly fill in ticket details.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
