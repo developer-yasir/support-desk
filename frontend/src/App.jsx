@@ -4,7 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import AppLayout from "./components/layout/AppLayout";
@@ -27,8 +27,51 @@ import ReportBuilder from "./pages/admin/ReportBuilder";
 import AgentManagement from "./pages/admin/AgentManagement";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
+import CompanySetupModal from "./components/CompanySetupModal";
 
 const queryClient = new QueryClient();
+
+function AppContent() {
+  const { needsSetup, completeSetup } = useAuth();
+
+  return (
+    <>
+      <CompanySetupModal open={needsSetup} onComplete={completeSetup} />
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Dashboard />} />
+            <Route path="tickets" element={<Tickets />} />
+            <Route path="tickets/:id" element={<TicketDetail />} />
+            <Route path="tickets/new" element={<CreateTicket />} />
+            <Route path="contacts" element={<Contacts />} />
+            <Route path="companies" element={<ClientCompanies />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="automations" element={<Automations />} />
+            <Route path="admin/users" element={<AdminUsers />} />
+            <Route path="admin/settings/*" element={<AdminSettings />} />
+            <Route path="admin/audit-logs" element={<AuditLogs />} />
+            <Route path="admin/teams" element={<TeamsManagement />} />
+            <Route path="admin/permissions" element={<RolePermissions />} />
+            <Route path="admin/reports" element={<ReportBuilder />} />
+            <Route path="admin/agents" element={<AgentManagement />} />
+            <Route path="profile" element={<Profile />} />
+          </Route>
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </>
+  );
+}
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -37,38 +80,7 @@ const App = () => (
         <TooltipProvider>
           <Toaster />
           <Sonner />
-          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route
-                path="/"
-                element={
-                  <ProtectedRoute>
-                    <AppLayout />
-                  </ProtectedRoute>
-                }
-              >
-                <Route index element={<Dashboard />} />
-                <Route path="tickets" element={<Tickets />} />
-                <Route path="tickets/:id" element={<TicketDetail />} />
-                <Route path="tickets/new" element={<CreateTicket />} />
-                <Route path="contacts" element={<Contacts />} />
-                <Route path="companies" element={<ClientCompanies />} />
-                <Route path="reports" element={<Reports />} />
-                <Route path="automations" element={<Automations />} />
-                <Route path="admin/users" element={<AdminUsers />} />
-                <Route path="admin/settings" element={<AdminSettings />} />
-                <Route path="admin/audit-logs" element={<AuditLogs />} />
-                <Route path="admin/teams" element={<TeamsManagement />} />
-                <Route path="admin/permissions" element={<RolePermissions />} />
-                <Route path="admin/reports" element={<ReportBuilder />} />
-                <Route path="admin/agents" element={<AgentManagement />} />
-                <Route path="profile" element={<Profile />} />
-              </Route>
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
+          <AppContent />
         </TooltipProvider>
       </AuthProvider>
     </ThemeProvider>

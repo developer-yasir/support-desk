@@ -223,6 +223,34 @@ export const api = {
         }
     },
 
+    updateEmailConfig: async (id, data) => {
+        try {
+            const response = await fetch(`${API_URL}/companies/${id}/email-config`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify(data),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Update email config error:', error);
+            throw error;
+        }
+    },
+
+    testEmailConfig: async (id, testRecipient) => {
+        try {
+            const response = await fetch(`${API_URL}/companies/${id}/test-email`, {
+                method: 'POST',
+                headers: getHeaders(),
+                body: JSON.stringify({ testRecipient }),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Test email config error:', error);
+            throw error;
+        }
+    },
+
     // Users (General)
     getUsers: async (params = {}) => {
         try {
