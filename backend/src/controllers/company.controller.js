@@ -341,3 +341,49 @@ export const testEmail = async (req, res) => {
         });
     }
 };
+
+// @desc    Update company features
+// @route   PUT /api/companies/:id/features
+// @access  Private (Super Admin only)
+export const updateCompanyFeatures = async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+
+        if (!company) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Company not found'
+            });
+        }
+
+        // Only super admin can update features
+        if (req.user.role !== 'super_admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Only super admins can manage company features'
+            });
+        }
+
+        const { features } = req.body;
+
+        // Update features
+        if (features) {
+            company.features = {
+                ...company.features,
+                ...features
+            };
+        }
+
+        await company.save();
+
+        res.status(200).json({
+            status: 'success',
+            data: { company }
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+};

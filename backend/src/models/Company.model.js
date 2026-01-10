@@ -69,6 +69,28 @@ const companySchema = new mongoose.Schema({
         }, { _id: false }),
         default: {}
     },
+    features: {
+        emailIntegration: {
+            type: Boolean,
+            default: false
+        },
+        reports: {
+            type: Boolean,
+            default: true
+        },
+        clientCompanies: {
+            type: Boolean,
+            default: false
+        },
+        customBranding: {
+            type: Boolean,
+            default: false
+        },
+        apiAccess: {
+            type: Boolean,
+            default: false
+        }
+    },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'

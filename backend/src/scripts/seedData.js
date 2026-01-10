@@ -89,7 +89,14 @@ const seedData = async () => {
                 industry: industries[i],
                 status: 'active',
                 setupCompleted: true,
-                createdBy: superAdmin._id
+                createdBy: superAdmin._id,
+                features: {
+                    emailIntegration: true,
+                    reports: true,
+                    clientCompanies: true,
+                    customBranding: true,
+                    apiAccess: true
+                }
             });
             totalMainCompanies++;
             console.log(`✅ Created main company: ${mainCompany.name}`);
@@ -147,7 +154,14 @@ const seedData = async () => {
                     industry: industries[i],
                     status: 'active',
                     setupCompleted: true,
-                    createdBy: manager._id
+                    createdBy: manager._id,
+                    features: {
+                        emailIntegration: false,
+                        reports: true,
+                        clientCompanies: false,
+                        customBranding: false,
+                        apiAccess: false
+                    }
                 });
                 totalClientCompanies++;
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import CompanyTicketHistory from "@/components/CompanyTicketHistory";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Building2, Users, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp, Contact } from "lucide-react";
+import { Plus, Search, Building2, Users, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp, Contact, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 import CompanyLogoUpload from "@/components/CompanyLogoUpload";
+import { Switch } from "@/components/ui/switch";
 
 export default function ClientCompanies() {
   const { isManager, isSuperAdmin } = useAuth();
@@ -50,6 +51,15 @@ export default function ClientCompanies() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
   const [expandedCompany, setExpandedCompany] = useState(null);
+  const [isFeaturesDialogOpen, setIsFeaturesDialogOpen] = useState(false);
+  const [managingFeaturesCompany, setManagingFeaturesCompany] = useState(null);
+  const [features, setFeatures] = useState({
+    emailIntegration: false,
+    reports: true,
+    clientCompanies: false,
+    customBranding: false,
+    apiAccess: false
+  });
   const [formData, setFormData] = useState({
     name: "",
     domain: "",
@@ -154,6 +164,37 @@ export default function ClientCompanies() {
 
   const toggleExpanded = (companyId) => {
     setExpandedCompany(expandedCompany === companyId ? null : companyId);
+  };
+
+  const handleManageFeatures = (company) => {
+    setManagingFeaturesCompany(company);
+    setFeatures(company.features || {
+      emailIntegration: false,
+      reports: true,
+      clientCompanies: false,
+      customBranding: false,
+      apiAccess: false
+    });
+    setIsFeaturesDialogOpen(true);
+  };
+
+  const handleFeatureToggle = (featureName) => {
+    setFeatures(prev => ({
+      ...prev,
+      [featureName]: !prev[featureName]
+    }));
+  };
+
+  const handleSaveFeatures = async () => {
+    try {
+      await api.updateCompanyFeatures(managingFeaturesCompany._id, features);
+      toast.success("Features updated successfully");
+      fetchCompanies();
+      setIsFeaturesDialogOpen(false);
+      setManagingFeaturesCompany(null);
+    } catch (error) {
+      toast.error(error.message || "Failed to update features");
+    }
   };
 
   if (loading) {
@@ -344,6 +385,12 @@ export default function ClientCompanies() {
                               <Pencil className="h-4 w-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
+                            {isSuperAdmin && (
+                              <DropdownMenuItem onClick={() => handleManageFeatures(company)}>
+                                <Settings className="h-4 w-4 mr-2" />
+                                Manage Features
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={() => handleDelete(company._id)}
                               className="text-destructive"
@@ -373,6 +420,83 @@ export default function ClientCompanies() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Features Management Dialog */}
+      <Dialog open={isFeaturesDialogOpen} onOpenChange={setIsFeaturesDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage Features - {managingFeaturesCompany?.name}</DialogTitle>
+            <DialogDescription>
+              Enable or disable features for this company
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="emailIntegration">Email Integration</Label>
+                <p className="text-sm text-muted-foreground">Send/receive tickets via email</p>
+              </div>
+              <Switch
+                id="emailIntegration"
+                checked={features.emailIntegration}
+                onCheckedChange={() => handleFeatureToggle('emailIntegration')}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="reports">Reports & Analytics</Label>
+                <p className="text-sm text-muted-foreground">Advanced reporting dashboard</p>
+              </div>
+              <Switch
+                id="reports"
+                checked={features.reports}
+                onCheckedChange={() => handleFeatureToggle('reports')}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="clientCompanies">Client Companies</Label>
+                <p className="text-sm text-muted-foreground">Sub-company management</p>
+              </div>
+              <Switch
+                id="clientCompanies"
+                checked={features.clientCompanies}
+                onCheckedChange={() => handleFeatureToggle('clientCompanies')}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="customBranding">Custom Branding</Label>
+                <p className="text-sm text-muted-foreground">Company logo and branding</p>
+              </div>
+              <Switch
+                id="customBranding"
+                checked={features.customBranding}
+                onCheckedChange={() => handleFeatureToggle('customBranding')}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <Label htmlFor="apiAccess">API Access</Label>
+                <p className="text-sm text-muted-foreground">REST API for integrations</p>
+              </div>
+              <Switch
+                id="apiAccess"
+                checked={features.apiAccess}
+                onCheckedChange={() => handleFeatureToggle('apiAccess')}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIsFeaturesDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSaveFeatures}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

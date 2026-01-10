@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/AuthContext";
+import { useFeatures } from "../contexts/FeaturesContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -50,6 +51,7 @@ const StatCard = ({ title, value, icon: Icon, description, trend }) => (
 
 export default function Dashboard() {
   const { user, isManager, isSuperAdmin } = useAuth();
+  const { hasFeature } = useFeatures();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recentTickets, setRecentTickets] = useState([]);
@@ -164,8 +166,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Charts - Hidden for Super Admin */}
-      {!isSuperAdmin && isManager && (
+      {/* Charts - Hidden for Super Admin or if reports feature disabled */}
+      {!isSuperAdmin && isManager && hasFeature('reports') && (
         <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
           {/* Ticket Volume Chart */}
           <Card>

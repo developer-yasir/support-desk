@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { useFeatures } from "../../contexts/FeaturesContext";
 import {
   LayoutDashboard,
   Ticket,
@@ -56,6 +57,7 @@ const adminNavigation = [
 
 export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
   const { user, isSuperAdmin, logout } = useAuth();
+  const { hasFeature } = useFeatures();
   const navigate = useNavigate();
   const isCollapsed = !open && !isMobile;
 
@@ -82,7 +84,16 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
   );
 
   // Combine: always-visible items + role-based items
-  const filteredNav = [...alwaysVisibleNav, ...roleBasedNav];
+  const filteredNav = [...alwaysVisibleNav, ...roleBasedNav].filter((item) => {
+    // Check feature access for specific navigation items
+    if (item.name === "Companies" && !isSuperAdmin && !hasFeature('clientCompanies')) {
+      return false;
+    }
+    if (item.name === "Reports" && !isSuperAdmin && !hasFeature('reports')) {
+      return false;
+    }
+    return true;
+  });
 
   const handleNavClick = () => {
     if (onNavigate) {

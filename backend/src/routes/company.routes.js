@@ -6,7 +6,8 @@ import {
     updateCompany,
     deleteCompany,
     updateEmailConfig,
-    testEmail
+    testEmail,
+    updateCompanyFeatures
 } from '../controllers/company.controller.js';
 import { protect, authorize } from '../middleware/auth.middleware.js';
 
@@ -30,5 +31,9 @@ router.route('/:id/email-config')
 
 router.route('/:id/test-email')
     .post(authorize('manager', 'admin', 'super_admin'), testEmail);
+
+// Feature management route
+router.route('/:id/features')
+    .put(authorize('super_admin'), updateCompanyFeatures);
 
 export default router;
