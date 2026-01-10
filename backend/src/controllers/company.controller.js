@@ -1,5 +1,6 @@
 import Company from '../models/Company.model.js';
 import User from '../models/User.model.js';
+import Ticket from '../models/Ticket.model.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { testEmailConfig } from '../services/email.service.js';
 
@@ -39,9 +40,37 @@ export const getCompanies = async (req, res) => {
         }
 
         const companies = await Company.find(query).sort({ createdAt: -1 });
+
+        // Add statistics for each company
+        const companiesWithStats = await Promise.all(companies.map(async (company) => {
+            const companyObj = company.toObject();
+
+            // Count tickets for this company
+            const ticketCount = await Ticket.countDocuments({ companyId: company._id });
+
+            // Count agents (users with role 'agent' in this company)
+            const agentCount = await User.countDocuments({
+                company: company._id,
+                role: 'agent'
+            });
+
+            // Count contacts (users with role 'customer' in this company)
+            const contactCount = await User.countDocuments({
+                company: company._id,
+                role: 'customer'
+            });
+
+            return {
+                ...companyObj,
+                ticketCount,
+                agentCount,
+                contactCount
+            };
+        }));
+
         res.status(200).json({
             status: 'success',
-            data: { companies }
+            data: { companies: companiesWithStats }
         });
     } catch (error) {
         res.status(500).json({

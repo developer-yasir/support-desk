@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import CompanyTicketHistory from "@/components/CompanyTicketHistory";
 import { useNavigate } from "react-router-dom";
-import { Plus, Search, Building2, Users, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Search, Building2, Users, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp, Contact } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -311,7 +311,20 @@ export default function ClientCompanies() {
                             {company.domain} • {company.industry}
                           </p>
                         </div>
-                        <div className="flex items-center gap-6 text-sm">
+                        <div className="flex items-center gap-4 text-sm">
+                          {/* Company Statistics */}
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Ticket className="h-4 w-4" />
+                            <span>{company.ticketCount || 0} tickets</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Users className="h-4 w-4" />
+                            <span>{company.agentCount || 0} agents</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <Contact className="h-4 w-4" />
+                            <span>{company.contactCount || 0} contacts</span>
+                          </div>
                           <Badge
                             variant={company.status === "active" ? "default" : "secondary"}
                           >

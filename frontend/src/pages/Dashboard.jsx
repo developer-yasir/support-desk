@@ -49,7 +49,7 @@ const StatCard = ({ title, value, icon: Icon, description, trend }) => (
 );
 
 export default function Dashboard() {
-  const { user, isManager } = useAuth();
+  const { user, isManager, isSuperAdmin } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recentTickets, setRecentTickets] = useState([]);
@@ -58,6 +58,13 @@ export default function Dashboard() {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
+
+        // Super admins don't need ticket data
+        if (isSuperAdmin) {
+          setLoading(false);
+          return;
+        }
+
         // Parallel fetch for better performance
         const [statsData, ticketsData] = await Promise.all([
           api.getDashboardStats(),
@@ -74,7 +81,7 @@ export default function Dashboard() {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [isSuperAdmin]);
 
   if (loading) {
     return (
@@ -112,47 +119,53 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Welcome back, {user?.name}!</h1>
           <p className="text-sm sm:text-base text-muted-foreground">
-            Here's what's happening with your support queue.
+            {isSuperAdmin
+              ? "Manage your companies, users, and system settings."
+              : "Here's what's happening with your support queue."}
           </p>
         </div>
-        <Button asChild size="sm" className="w-fit">
-          <Link to="/tickets/new">
-            <Plus className="mr-2 h-4 w-4" />
-            New Ticket
-          </Link>
-        </Button>
+        {!isSuperAdmin && (
+          <Button asChild size="sm" className="w-fit">
+            <Link to="/tickets/new">
+              <Plus className="mr-2 h-4 w-4" />
+              New Ticket
+            </Link>
+          </Button>
+        )}
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Open Tickets"
-          value={openCount}
-          icon={Ticket}
-          description="Awaiting response"
-        />
-        <StatCard
-          title="Pending"
-          value={pendingCount}
-          icon={Clock}
-          description="Waiting on customer"
-        />
-        <StatCard
-          title="Resolved"
-          value={resolvedCount}
-          icon={CheckCircle}
-          description="Total resolved"
-        />
-        <StatCard
-          title="Total Tickets"
-          value={stats?.total || 0}
-          icon={AlertTriangle}
-          description="All time"
-        />
-      </div>
+      {/* Stats Grid - Hidden for Super Admin */}
+      {!isSuperAdmin && (
+        <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            title="Open Tickets"
+            value={openCount}
+            icon={Ticket}
+            description="Awaiting response"
+          />
+          <StatCard
+            title="Pending"
+            value={pendingCount}
+            icon={Clock}
+            description="Waiting on customer"
+          />
+          <StatCard
+            title="Resolved"
+            value={resolvedCount}
+            icon={CheckCircle}
+            description="Total resolved"
+          />
+          <StatCard
+            title="Total Tickets"
+            value={stats?.total || 0}
+            icon={AlertTriangle}
+            description="All time"
+          />
+        </div>
+      )}
 
-      {/* Charts */}
-      {isManager && (
+      {/* Charts - Hidden for Super Admin */}
+      {!isSuperAdmin && isManager && (
         <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
           {/* Ticket Volume Chart */}
           <Card>
@@ -242,71 +255,72 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Recent Tickets / Agent Performance */}
-      <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
-        {/* Recent Tickets */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-6">
-            <div>
-              <CardTitle className="text-base sm:text-lg">Recent Tickets</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">
-                Latest tickets requiring attention
-              </CardDescription>
-            </div>
-            <Button variant="outline" size="sm" asChild className="text-xs sm:text-sm">
-              <Link to="/tickets">View all</Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
-            <div className="space-y-2 sm:space-y-4">
-              {recentTickets.length > 0 ? recentTickets.map((ticket) => (
-                <Link
-                  key={ticket._id}
-                  to={`/tickets/${ticket._id}`}
-                  className="flex items-center justify-between p-2 sm:p-3 rounded-lg border hover:bg-accent transition-colors"
-                >
-                  <div className="flex-1 min-w-0 mr-2">
-                    <p className="font-medium truncate text-sm sm:text-base">{ticket.subject}</p>
-                    <p className="text-xs sm:text-sm text-muted-foreground truncate">
-                      {ticket.ticketNumber} • {ticket.createdBy?.name || 'User'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span
-                      className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium ${ticket.priority === "urgent"
-                        ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                        : ticket.priority === "high"
-                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300"
-                          : ticket.priority === "medium"
-                            ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
-                            : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
-                        }`}
-                    >
-                      {ticket.priority}
-                    </span>
-                  </div>
-                </Link>
-              )) : (
-                <div className="text-center text-muted-foreground py-4 text-sm">No recent tickets</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Agent Performance - Placeholder or Future Implementation */}
-        {isManager && (
+      {/* Recent Tickets / Agent Performance - Hidden for Super Admin */}
+      {!isSuperAdmin && (
+        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
+          {/* Recent Tickets */}
           <Card>
-            <CardHeader className="p-3 sm:p-6">
-              <CardTitle className="text-base sm:text-lg">Agent Performance</CardTitle>
-              <CardDescription className="text-xs sm:text-sm">Coming soon</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between p-3 sm:p-6">
+              <div>
+                <CardTitle className="text-base sm:text-lg">Recent Tickets</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">
+                  Latest tickets requiring attention
+                </CardDescription>
+              </div>
+              <Button variant="outline" size="sm" asChild className="text-xs sm:text-sm">
+                <Link to="/tickets">View all</Link>
+              </Button>
             </CardHeader>
-            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0 flex items-center justify-center h-48">
-              <p className="text-muted-foreground text-sm">Detailed agent metrics coming in v2.0</p>
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="space-y-2 sm:space-y-4">
+                {recentTickets.length > 0 ? recentTickets.map((ticket) => (
+                  <Link
+                    key={ticket._id}
+                    to={`/tickets/${ticket._id}`}
+                    className="flex items-center justify-between p-2 sm:p-3 rounded-lg border hover:bg-accent transition-colors"
+                  >
+                    <div className="flex-1 min-w-0 mr-2">
+                      <p className="font-medium truncate text-sm sm:text-base">{ticket.subject}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground truncate">
+                        {ticket.ticketNumber} • {ticket.createdBy?.name || 'User'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span
+                        className={`px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full text-[10px] sm:text-xs font-medium ${ticket.priority === "urgent"
+                          ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                          : ticket.priority === "high"
+                            ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300"
+                            : ticket.priority === "medium"
+                              ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+                              : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                          }`}
+                      >
+                        {ticket.priority}
+                      </span>
+                    </div>
+                  </Link>
+                )) : (
+                  <div className="text-center text-muted-foreground py-4 text-sm">No recent tickets</div>
+                )}
+              </div>
             </CardContent>
           </Card>
-        )}
 
-      </div>
+          {/* Agent Performance - Placeholder or Future Implementation */}
+          {isManager && (
+            <Card>
+              <CardHeader className="p-3 sm:p-6">
+                <CardTitle className="text-base sm:text-lg">Agent Performance</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Coming soon</CardDescription>
+              </CardHeader>
+              <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0 flex items-center justify-center h-48">
+                <p className="text-muted-foreground text-sm">Detailed agent metrics coming in v2.0</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -40,14 +40,13 @@ import {
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Tickets", href: "/tickets", icon: Ticket },
-  { name: "Contacts", href: "/contacts", icon: Contact, roles: ["superadmin", "company_manager", "agent"] },
+  { name: "Tickets", href: "/tickets", icon: Ticket, roles: ["company_manager", "agent"] },
+  { name: "Contacts", href: "/contacts", icon: Contact, roles: ["company_manager", "agent"] },
   { name: "Companies", href: "/companies", icon: Building2, roles: ["superadmin", "company_manager", "agent"] },
   { name: "Reports", href: "/reports", icon: BarChart3, roles: ["superadmin", "company_manager"] },
 ];
 
 const adminNavigation = [
-  { name: "User Management", href: "/admin/users", icon: UserCog, roles: ["superadmin"] },
   { name: "Teams", href: "/admin/teams", icon: Users, roles: ["superadmin"] },
   { name: "Permissions", href: "/admin/permissions", icon: Shield, roles: ["superadmin"] },
   { name: "Report Builder", href: "/admin/reports", icon: FileText, roles: ["superadmin"] },
