@@ -42,17 +42,17 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Tickets", href: "/tickets", icon: Ticket },
   { name: "Contacts", href: "/contacts", icon: Contact, roles: ["superadmin", "company_manager", "agent"] },
-  { name: "Companies", href: "/companies", icon: Building2, roles: ["superadmin", "company_manager", "agent"] },
+  { name: "Companies", href: "/companies", icon: Building2, roles: ["superadmin", "company_manager", "agent", "admin"] },
   { name: "Reports", href: "/reports", icon: BarChart3, roles: ["superadmin", "company_manager"] },
 ];
 
 const adminNavigation = [
-  { name: "User Management", href: "/admin/users", icon: UserCog, roles: ["superadmin"] },
-  { name: "Teams", href: "/admin/teams", icon: Users, roles: ["superadmin"] },
-  { name: "Permissions", href: "/admin/permissions", icon: Shield, roles: ["superadmin"] },
-  { name: "Report Builder", href: "/admin/reports", icon: FileText, roles: ["superadmin"] },
-  { name: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardList, roles: ["superadmin"] },
-  { name: "Settings", href: "/admin/settings", icon: Settings, roles: ["superadmin", "company_manager"] },
+  { name: "User Management", href: "/admin/users", icon: UserCog, roles: ["superadmin", "admin"] },
+  { name: "Teams", href: "/admin/teams", icon: Users, roles: ["superadmin", "admin"] },
+  { name: "Permissions", href: "/admin/permissions", icon: Shield, roles: ["superadmin", "admin"] },
+  { name: "Report Builder", href: "/admin/reports", icon: FileText, roles: ["superadmin", "admin"] },
+  { name: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardList, roles: ["superadmin", "admin"] },
+  { name: "Settings", href: "/admin/settings", icon: Settings, roles: ["superadmin", "company_manager", "admin"] },
 ];
 
 export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
@@ -63,16 +63,28 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
   const normalizeRole = (role) => {
     const r = String(role ?? "").trim().toLowerCase().replace(/\s+/g, "_");
     if (r === "manager" || r === "companymanager" || r === "company_manager") return "company_manager";
-    if (r === "admin" || r === "super_admin" || r === "superadmin") return "superadmin";
+    if (r === "super_admin" || r === "superadmin") return "superadmin";
+    // 'admin' stays 'admin'
     return r;
   };
 
   const effectiveRole = normalizeRole(user?.role);
   const isManager = effectiveRole === 'company_manager';
-  const showAdminSection = isSuperAdmin || isManager;
+  const showAdminSection = isSuperAdmin || isManager || effectiveRole === 'admin';
 
   // Dashboard and Tickets should ALWAYS be visible regardless of role
-  const alwaysVisibleNav = navigation.filter((item) => !item.roles);
+  const alwaysVisibleNav = navigation.filter((item) => {
+    // Hide Tickets for Admin role
+    if (item.name === "Tickets" && user?.role === "admin") return false;
+
+    // Hide Tickets if Ticketing feature is disabled for the company
+    if (item.name === "Tickets") {
+      const ticketingEnabled = user?.company?.features?.ticketing ?? true;
+      if (!ticketingEnabled) return false;
+    }
+
+    return !item.roles;
+  });
 
   const roleBasedNav = navigation.filter(
     (item) => item.roles && item.roles.includes(effectiveRole)
@@ -318,9 +330,11 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
                         ? "Super Admin"
                         : user.role === "company_manager"
                           ? "Manager"
-                          : user.role === "customer"
-                            ? "Customer"
-                            : "Agent"}
+                          : user.role === "admin"
+                            ? "Admin"
+                            : user.role === "customer"
+                              ? "Customer"
+                              : "Agent"}
                     </p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-sidebar-foreground/40" />

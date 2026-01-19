@@ -38,7 +38,82 @@ export const getCompanies = async (req, res) => {
             }
         }
 
-        const companies = await Company.find(query).sort({ createdAt: -1 });
+        // Use aggregation to get stats if fetching all companies or if specific type requested
+        // Note: Sort must be applied after projection or initially if matching.
+        // For simplicity, we match first, then lookup/project/sort.
+
+        const pipeline = [
+            { $match: query },
+            {
+                $lookup: {
+                    from: 'tickets',
+                    localField: '_id',
+                    foreignField: 'companyId',
+                    as: 'tickets'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: '_id',
+                    foreignField: 'company',
+                    as: 'users'
+                }
+            },
+            {
+                $project: {
+                    name: 1,
+                    domain: 1,
+                    type: 1,
+                    industry: 1,
+                    status: 1,
+                    features: 1,
+                    createdAt: 1,
+                    notes: 1,
+                    setupCompleted: 1,
+                    emailConfig: 1,
+                    parentCompany: 1,
+                    ticketCount: { $size: '$tickets' },
+                    agentCount: {
+                        $size: {
+                            $filter: {
+                                input: '$users',
+                                as: 'user',
+                                cond: { $eq: ['$$user.role', 'agent'] }
+                            }
+                        }
+                    },
+                    contactCount: {
+                        $size: {
+                            $filter: {
+                                input: '$users',
+                                as: 'user',
+                                cond: { $eq: ['$$user.role', 'customer'] }
+                            }
+                        }
+                    }
+                }
+            },
+            { $sort: { createdAt: -1 } }
+        ];
+
+        let companies = await Company.aggregate(pipeline);
+
+        // For admin/superadmin, organize into hierarchical structure
+        if (req.user.role === 'admin' || req.user.role === 'super_admin') {
+            // Separate main companies and client companies
+            const mainCompanies = companies.filter(c => c.type === 'main-company');
+            const clientCompanies = companies.filter(c => c.type === 'client-company');
+
+            // Attach client companies to their parent main companies
+            companies = mainCompanies.map(mainCompany => ({
+                ...mainCompany,
+                clientCompanies: clientCompanies.filter(
+                    client => client.parentCompany?.toString() === mainCompany._id.toString()
+                )
+            }));
+        }
+
         res.status(200).json({
             status: 'success',
             data: { companies }
