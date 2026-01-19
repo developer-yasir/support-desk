@@ -30,7 +30,7 @@ export default function CompanyTicketHistory({ companyName }) {
 
     if (loading) return <div className="flex justify-center p-4"><Loader2 className="animate-spin h-5 w-5 text-muted-foreground" /></div>;
     if (error) return <div className="p-4 text-red-500 flex items-center gap-2"><AlertCircle className="h-4 w-4" /> {error}</div>;
-    if (tickets.length === 0) return <div className="p-4 text-muted-foreground text-sm italic">No tickets found for this company.</div>;
+    if (tickets.length === 0) return null;
 
     return (
         <div className="space-y-2">

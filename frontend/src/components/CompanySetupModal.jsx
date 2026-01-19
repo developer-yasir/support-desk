@@ -19,6 +19,7 @@ export default function CompanySetupModal({ open, onComplete }) {
     const { user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
+        name: user?.company?.name || "",
         domain: "",
         industry: "",
         notes: "",
@@ -70,9 +71,11 @@ export default function CompanySetupModal({ open, onComplete }) {
                         <Label htmlFor="companyName">Company Name</Label>
                         <Input
                             id="companyName"
-                            value={user?.company?.name || ""}
-                            disabled
-                            className="bg-muted"
+                            value={formData.name}
+                            onChange={(e) =>
+                                setFormData({ ...formData, name: e.target.value })
+                            }
+                            placeholder="Your Company Name"
                         />
                     </div>
 

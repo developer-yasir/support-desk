@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   TrendingUp,
   Plus,
+  Users,
+  Building2
 } from "lucide-react";
 import {
   BarChart,
@@ -56,6 +58,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [recentTickets, setRecentTickets] = useState([]);
 
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -70,11 +74,16 @@ export default function Dashboard() {
         // Parallel fetch for better performance
         const [statsData, ticketsData] = await Promise.all([
           api.getDashboardStats(),
-          api.getTickets()
+          // Don't fetch tickets if Admin (it redirects anyway or returns empty)
+          // But our API.getTickets calls endpoint. Endpoint returns empty for Admin.
+          // So it's safe to call, but we can optimize.
+          user?.role === 'admin' ? Promise.resolve({ data: { tickets: [] } }) : api.getTickets()
         ]);
 
         setStats(statsData.data.stats);
-        setRecentTickets(ticketsData.data.tickets.slice(0, 5));
+        if (ticketsData.data.tickets) {
+          setRecentTickets(ticketsData.data.tickets.slice(0, 5));
+        }
       } catch (error) {
         console.error("Dashboard fetch error:", error);
       } finally {
@@ -92,6 +101,58 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  // Admin Dashboard View
+  if (user?.role === 'admin' || user?.role === 'superadmin') {
+    const { adminStats } = stats || {};
+    return (
+      <div className="space-y-4 md:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">System Overview</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Welcome back, {user?.name}. Here is what's happening in the system.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+          <StatCard
+            title="Total Users"
+            value={adminStats?.totalUsers || 0}
+            icon={Users}
+            description="System-wide users"
+          />
+          <StatCard
+            title="Total Companies"
+            value={adminStats?.totalCompanies || 0}
+            icon={Building2}
+            description="All registered entities"
+          />
+          <StatCard
+            title="Client Companies"
+            value={adminStats?.totalClientCompanies || 0}
+            icon={Building2}
+            description="External clients"
+          />
+        </div>
+
+        <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
+          <div className="flex flex-col space-y-1.5 p-6 pt-0 px-0">
+            <h3 className="font-semibold leading-none tracking-tight">System Status</h3>
+            <p className="text-sm text-muted-foreground">All systems operational.</p>
+          </div>
+          {/* Placeholder for more advanced charts/logs */}
+          <div className="h-[200px] flex items-center justify-center border-t border-dashed">
+            <p className="text-muted-foreground text-sm">Select a company to manage features or view specific reports.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // .. Regular Dashboard logic below ..
+
 
   // Safe defaults
   const openCount = stats?.status?.open || 0;

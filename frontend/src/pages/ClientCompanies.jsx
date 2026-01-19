@@ -13,15 +13,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger, SheetFooter, SheetClose } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,17 +31,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 import CompanyLogoUpload from "@/components/CompanyLogoUpload";
 import { Switch } from "@/components/ui/switch";
 
 export default function ClientCompanies() {
-  const { isManager, isSuperAdmin } = useAuth();
+  const { isManager, isSuperAdmin, user } = useAuth();
   const navigate = useNavigate();
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +60,7 @@ export default function ClientCompanies() {
     domain: "",
     industry: "",
     notes: "",
+    features: { ticketing: true }, // Default features
   });
 
   useEffect(() => {
@@ -73,8 +69,9 @@ export default function ClientCompanies() {
 
   const fetchCompanies = async () => {
     try {
-      // Super Admin sees all companies, Managers see only client companies
-      const params = isSuperAdmin ? {} : { type: 'client-company' };
+      // Super Admin and Admin see all companies, Managers see only client companies
+      const isAdmin = isSuperAdmin || user?.role === 'admin';
+      const params = isAdmin ? {} : { type: 'client-company' };
       const response = await api.getCompanies(params);
       setCompanies(response.data.companies);
     } catch (error) {
@@ -126,7 +123,9 @@ export default function ClientCompanies() {
       name: company.name,
       domain: company.domain || "",
       industry: company.industry || "",
+      industry: company.industry || "",
       notes: company.notes || "",
+      features: company.features || { ticketing: true },
     });
     setIsDialogOpen(true);
   };
@@ -205,6 +204,7 @@ export default function ClientCompanies() {
     );
   }
 
+  const isAdminAccess = isManager || isSuperAdmin || user?.role === 'admin';
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -214,95 +214,358 @@ export default function ClientCompanies() {
             Manage companies and view their ticket history
           </p>
         </div>
-        {isManager && (
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
+        {isAdminAccess && (
+          <Sheet open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <SheetTrigger asChild>
               <Button onClick={() => resetForm()}>
                 <Plus className="h-4 w-4 mr-2" />
                 Add Company
               </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>
+            </SheetTrigger>
+            <SheetContent className="sm:max-w-xl overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>
                   {editingCompany ? "Edit Company" : "Add New Company"}
-                </DialogTitle>
-                <DialogDescription>
+                </SheetTitle>
+                <SheetDescription>
                   {editingCompany
-                    ? "Update company information"
-                    : "Create a new client company"}
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit}>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="name">Company Name</Label>
-                    <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) =>
-                        setFormData({ ...formData, name: e.target.value })
-                      }
-                      placeholder="Acme Corporation"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="domain">Domain</Label>
-                    <Input
-                      id="domain"
-                      value={formData.domain}
-                      onChange={(e) =>
-                        setFormData({ ...formData, domain: e.target.value })
-                      }
-                      placeholder="acme.com"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="industry">Industry</Label>
-                    <Input
-                      id="industry"
-                      value={formData.industry}
-                      onChange={(e) =>
-                        setFormData({ ...formData, industry: e.target.value })
-                      }
-                      placeholder="Technology"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="notes">Notes</Label>
-                    <Textarea
-                      id="notes"
-                      value={formData.notes}
-                      onChange={(e) =>
-                        setFormData({ ...formData, notes: e.target.value })
-                      }
-                      placeholder="Additional notes..."
-                      rows={3}
-                    />
-                  </div>
+                    ? "Manage company details, feature settings, and branding."
+                    : "Create a new client company in the system."}
+                </SheetDescription>
+              </SheetHeader>
 
-                  {/* Logo Upload - Only for editing existing companies */}
-                  {editingCompany && (
-                    <div className="pt-2 border-t">
-                      <CompanyLogoUpload
-                        company={editingCompany}
-                        onLogoUpdate={handleLogoUpdate}
-                      />
-                    </div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={resetForm}>
-                    Cancel
-                  </Button>
-                  <Button type="submit">
-                    {editingCompany ? "Update" : "Create"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+              <div className="mt-6">
+                <Tabs defaultValue="details" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="details">Details</TabsTrigger>
+                    <TabsTrigger value="settings">Settings</TabsTrigger>
+                    {editingCompany && <TabsTrigger value="branding">Branding</TabsTrigger>}
+                  </TabsList>
+
+                  <form id="company-form" onSubmit={handleSubmit}>
+                    <TabsContent value="details" className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="name">Company Name</Label>
+                        <Input
+                          id="name"
+                          value={formData.name}
+                          onChange={(e) =>
+                            setFormData({ ...formData, name: e.target.value })
+                          }
+                          placeholder="Acme Corporation"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="domain">Domain</Label>
+                        <Input
+                          id="domain"
+                          value={formData.domain}
+                          onChange={(e) =>
+                            setFormData({ ...formData, domain: e.target.value })
+                          }
+                          placeholder="acme.com"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="industry">Industry</Label>
+                        <Input
+                          id="industry"
+                          value={formData.industry}
+                          onChange={(e) =>
+                            setFormData({ ...formData, industry: e.target.value })
+                          }
+                          placeholder="Technology"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="notes">Notes</Label>
+                        <Textarea
+                          id="notes"
+                          value={formData.notes}
+                          onChange={(e) =>
+                            setFormData({ ...formData, notes: e.target.value })
+                          }
+                          placeholder="Internal notes about this client..."
+                          rows={4}
+                        />
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="settings" className="space-y-4 py-4">
+                      <div className="rounded-lg border p-4 space-y-4">
+                        <div>
+                          <h4 className="font-medium">Feature Management</h4>
+                          <p className="text-sm text-muted-foreground">Toggle specific features for this company.</p>
+                        </div>
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-ticketing" className="text-base">Ticketing System</Label>
+                            <p className="text-xs text-muted-foreground">Allow users to create and manage support tickets.</p>
+                          </div>
+                          <Switch
+                            id="feature-ticketing"
+                            checked={formData.features?.ticketing ?? true}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, ticketing: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-knowledgebase" className="text-base">Knowledge Base</Label>
+                            <p className="text-xs text-muted-foreground">Enable self-service documentation and articles.</p>
+                          </div>
+                          <Switch
+                            id="feature-knowledgebase"
+                            checked={formData.features?.knowledgeBase ?? true}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, knowledgeBase: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-livechat" className="text-base">Live Chat</Label>
+                            <p className="text-xs text-muted-foreground">Enable real-time chat support for customers.</p>
+                          </div>
+                          <Switch
+                            id="feature-livechat"
+                            checked={formData.features?.liveChat ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, liveChat: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-reports" className="text-base">Reports & Analytics</Label>
+                            <p className="text-xs text-muted-foreground">Access to advanced reporting and analytics.</p>
+                          </div>
+                          <Switch
+                            id="feature-reports"
+                            checked={formData.features?.reports ?? true}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, reports: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-api" className="text-base">API Access</Label>
+                            <p className="text-xs text-muted-foreground">Allow programmatic access via REST API.</p>
+                          </div>
+                          <Switch
+                            id="feature-api"
+                            checked={formData.features?.apiAccess ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, apiAccess: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-email-notifications" className="text-base">Email Notifications</Label>
+                            <p className="text-xs text-muted-foreground">Automated email updates for ticket status changes.</p>
+                          </div>
+                          <Switch
+                            id="feature-email-notifications"
+                            checked={formData.features?.emailNotifications ?? true}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, emailNotifications: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-sla" className="text-base">SLA Management</Label>
+                            <p className="text-xs text-muted-foreground">Service Level Agreement tracking and enforcement.</p>
+                          </div>
+                          <Switch
+                            id="feature-sla"
+                            checked={formData.features?.slaManagement ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, slaManagement: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-custom-fields" className="text-base">Custom Fields</Label>
+                            <p className="text-xs text-muted-foreground">Add company-specific fields to tickets.</p>
+                          </div>
+                          <Switch
+                            id="feature-custom-fields"
+                            checked={formData.features?.customFields ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, customFields: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-automation" className="text-base">Automation Rules</Label>
+                            <p className="text-xs text-muted-foreground">Automated ticket routing and responses.</p>
+                          </div>
+                          <Switch
+                            id="feature-automation"
+                            checked={formData.features?.automationRules ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, automationRules: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-file-attachments" className="text-base">File Attachments</Label>
+                            <p className="text-xs text-muted-foreground">Allow uploading files to tickets (with size limits).</p>
+                          </div>
+                          <Switch
+                            id="feature-file-attachments"
+                            checked={formData.features?.fileAttachments ?? true}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, fileAttachments: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-time-tracking" className="text-base">Time Tracking</Label>
+                            <p className="text-xs text-muted-foreground">Log time spent on tickets for billing and reporting.</p>
+                          </div>
+                          <Switch
+                            id="feature-time-tracking"
+                            checked={formData.features?.timeTracking ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, timeTracking: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-ai-suggestions" className="text-base">AI-Powered Suggestions</Label>
+                            <p className="text-xs text-muted-foreground">Smart reply recommendations and automated insights.</p>
+                          </div>
+                          <Switch
+                            id="feature-ai-suggestions"
+                            checked={formData.features?.aiSuggestions ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, aiSuggestions: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-custom-branding" className="text-base">Custom Branding</Label>
+                            <p className="text-xs text-muted-foreground">White-label the support portal with company branding.</p>
+                          </div>
+                          <Switch
+                            id="feature-custom-branding"
+                            checked={formData.features?.customBranding ?? false}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, customBranding: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+
+                        <Separator />
+
+                        <div className="flex items-center justify-between">
+                          <div className="space-y-0.5">
+                            <Label htmlFor="feature-data-export" className="text-base">Data Export</Label>
+                            <p className="text-xs text-muted-foreground">Bulk export of tickets, reports, and analytics data.</p>
+                          </div>
+                          <Switch
+                            id="feature-data-export"
+                            checked={formData.features?.dataExport ?? true}
+                            onCheckedChange={(checked) => {
+                              const newFeatures = { ...formData.features, dataExport: checked };
+                              setFormData({ ...formData, features: newFeatures });
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="branding" className="space-y-4 py-4">
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="font-medium">Company Logo</h4>
+                          <p className="text-sm text-muted-foreground">Upload a logo to personalize the portal for this client.</p>
+                        </div>
+                        {editingCompany && (
+                          <CompanyLogoUpload
+                            company={editingCompany}
+                            onLogoUpdate={handleLogoUpdate}
+                          />
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <SheetFooter className="mt-4 sm:justify-end">
+                      <SheetClose asChild>
+                        <Button type="button" variant="outline" onClick={resetForm}>Cancel</Button>
+                      </SheetClose>
+                      <Button type="submit">
+                        {editingCompany ? "Save Changes" : "Create Company"}
+                      </Button>
+                    </SheetFooter>
+                  </form>
+                </Tabs>
+              </div>
+            </SheetContent>
+          </Sheet>
         )}
       </div>
 
@@ -324,6 +587,7 @@ export default function ClientCompanies() {
           <div className="space-y-2">
             {filteredCompanies.map((company) => {
               const isExpanded = expandedCompany === company._id;
+              const hasClientCompanies = company.clientCompanies && company.clientCompanies.length > 0;
 
               return (
                 <Collapsible
@@ -347,7 +611,17 @@ export default function ClientCompanies() {
                           <Building2 className="h-5 w-5 text-primary" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium">{company.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{company.name}</p>
+                            {company.type === 'main-company' && (
+                              <Badge variant="outline" className="text-xs">Main</Badge>
+                            )}
+                            {hasClientCompanies && (
+                              <Badge variant="secondary" className="text-xs">
+                                {company.clientCompanies.length} {company.clientCompanies.length === 1 ? 'Client' : 'Clients'}
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-sm text-muted-foreground">
                             {company.domain} • {company.industry}
                           </p>
@@ -373,7 +647,7 @@ export default function ClientCompanies() {
                           </Badge>
                         </div>
                       </div>
-                      {isManager && (
+                      {isAdminAccess && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon">
@@ -404,8 +678,74 @@ export default function ClientCompanies() {
                     </div>
 
                     <CollapsibleContent>
-                      <div className="border-t px-4 py-4 bg-muted/30">
-                        <CompanyTicketHistory companyName={company.name} />
+                      <div className="border-t p-4 bg-muted/30">
+                        {/* Show client companies if this is a main company */}
+                        {hasClientCompanies ? (
+                          <div className="space-y-3">
+                            <h4 className="text-sm font-semibold text-muted-foreground mb-3">Client Companies</h4>
+                            {company.clientCompanies.map((clientCompany) => (
+                              <div key={clientCompany._id} className="bg-background border rounded-lg p-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-3 flex-1">
+                                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                                      <Building2 className="h-4 w-4 text-primary" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="font-medium text-sm">{clientCompany.name}</p>
+                                      <p className="text-xs text-muted-foreground">
+                                        {clientCompany.domain} • {clientCompany.industry}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                      <div className="flex items-center gap-1" title="Tickets">
+                                        <Ticket className="h-3 w-3" />
+                                        <span>{clientCompany.ticketCount || 0}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1" title="Agents">
+                                        <Headphones className="h-3 w-3" />
+                                        <span>{clientCompany.agentCount || 0}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1" title="Contacts">
+                                        <Users className="h-3 w-3" />
+                                        <span>{clientCompany.contactCount || 0}</span>
+                                      </div>
+                                    </div>
+                                    <Badge
+                                      variant={clientCompany.status === "active" ? "default" : "secondary"}
+                                      className="text-xs"
+                                    >
+                                      {clientCompany.status}
+                                    </Badge>
+                                  </div>
+                                  {isAdminAccess && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7">
+                                          <MoreHorizontal className="h-3 w-3" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onClick={() => handleEdit(clientCompany)}>
+                                          <Pencil className="h-4 w-4 mr-2" />
+                                          Edit
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() => handleDelete(clientCompany._id)}
+                                          className="text-destructive"
+                                        >
+                                          <Trash2 className="h-4 w-4 mr-2" />
+                                          Delete
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <CompanyTicketHistory companyName={company.name} />
+                        )}
                       </div>
                     </CollapsibleContent>
                   </div>

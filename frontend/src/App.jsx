@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { FeaturesProvider } from "./contexts/FeaturesContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import RestrictedRoute from "./components/RestrictedRoute";
 import AppLayout from "./components/layout/AppLayout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -51,9 +52,21 @@ function AppContent() {
             }
           >
             <Route index element={<Dashboard />} />
-            <Route path="tickets" element={<Tickets />} />
-            <Route path="tickets/:id" element={<TicketDetail />} />
-            <Route path="tickets/new" element={<CreateTicket />} />
+            <Route path="tickets" element={
+              <RestrictedRoute forbiddenRoles={['admin']}>
+                <Tickets />
+              </RestrictedRoute>
+            } />
+            <Route path="tickets/:id" element={
+              <RestrictedRoute forbiddenRoles={['admin']}>
+                <TicketDetail />
+              </RestrictedRoute>
+            } />
+            <Route path="tickets/new" element={
+              <RestrictedRoute forbiddenRoles={['admin']}>
+                <CreateTicket />
+              </RestrictedRoute>
+            } />
             <Route path="contacts" element={<Contacts />} />
             <Route path="companies" element={<ClientCompanies />} />
             <Route path="reports" element={<Reports />} />

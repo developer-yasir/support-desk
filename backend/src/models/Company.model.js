@@ -22,6 +22,16 @@ const companySchema = new mongoose.Schema({
     notes: {
         type: String
     },
+    features: {
+        type: Map,
+        of: Boolean,
+        default: {}
+    },
+    parentCompany: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Company',
+        default: null
+    },
     status: {
         type: String,
         enum: ['active', 'inactive'],

@@ -13,6 +13,15 @@ export const getTickets = async (req, res) => {
         // Build query
         let query = {};
 
+        // Restrict Admin from seeing tickets
+        if (req.user.role === 'admin') {
+            return res.status(200).json({
+                status: 'success',
+                results: 0,
+                data: { tickets: [] }
+            });
+        }
+
         // Filter by role
         if (req.user.role === 'customer') {
             query.createdBy = req.user.id;
@@ -128,6 +137,30 @@ export const createTicket = async (req, res) => {
 
         // Fetch creator's details to get company info
         const creator = await User.findById(creatorId).populate('company');
+
+        // Check if ticketing is enabled for this company
+        if (creator.company && creator.company.features) {
+            // Check Map or Object. If Map, use .get(), if Object usage direct access via key.
+            // Model definition said Map of Boolean, but Mongoose Maps are accessed via .get() in code usually, 
+            // OR if it was just an object in schema Features: { type: Map, of: Boolean } -> .get('ticketing')
+            // Let's check Schema quickly or assume object access if toJSON/toObject virtuals apply, 
+            // but safer to try both or debug. Mongoose Maps need .get().
+            // Wait, schema was: features: { type: Map, of: Boolean, default: {} }
+            // So we must use .get('ticketing').
+
+            const ticketingEnabled = creator.company.features.get ? creator.company.features.get('ticketing') : (creator.company.features.ticketing ?? true);
+
+            // Default is true if not set? Or false? Schema default was empty object.
+            // Let's assume default is TRUE if undefined? Or FALSE? 
+            // If the map is empty, .get('ticketing') is undefined.
+            // In frontend logic we used ?? true. Let's align.
+            if (ticketingEnabled === false) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Ticketing system is disabled for your company.'
+                });
+            }
+        }
 
         const ticketData = {
             ...req.body,
@@ -479,7 +512,29 @@ export const getTicketStats = async (req, res) => {
         let matchStage = {};
 
         // Apply role-based filtering (logic shared with getTickets)
-        if (req.user.role === 'customer') {
+        if (req.user.role === 'admin' || req.user.role === 'super_admin') {
+            const totalUsers = await User.countDocuments({});
+            const totalCompanies = await Company.countDocuments({});
+            const totalClientCompanies = await Company.countDocuments({ type: 'client-company' });
+
+            return res.status(200).json({
+                status: 'success',
+                data: {
+                    stats: {
+                        adminStats: {
+                            totalUsers,
+                            totalCompanies,
+                            totalClientCompanies
+                        },
+                        // Keep other fields empty/zero as admin doesn't see tickets
+                        total: 0,
+                        status: {},
+                        priority: [],
+                        volume: []
+                    }
+                }
+            });
+        } else if (req.user.role === 'customer') {
             matchStage.createdBy = req.user.id;
         } else if (req.user.role === 'manager') {
             let allowedCompanyNames = [];
