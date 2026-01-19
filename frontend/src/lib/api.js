@@ -251,6 +251,20 @@ export const api = {
         }
     },
 
+    updateCompanyFeatures: async (id, features) => {
+        try {
+            const response = await fetch(`${API_URL}/companies/${id}/features`, {
+                method: 'PUT',
+                headers: getHeaders(),
+                body: JSON.stringify({ features }),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Update company features error:', error);
+            throw error;
+        }
+    },
+
     // Users (General)
     getUsers: async (params = {}) => {
         try {

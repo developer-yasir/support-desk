@@ -1,5 +1,6 @@
 import Company from '../models/Company.model.js';
 import User from '../models/User.model.js';
+import Ticket from '../models/Ticket.model.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { testEmailConfig } from '../services/email.service.js';
 
@@ -38,85 +39,38 @@ export const getCompanies = async (req, res) => {
             }
         }
 
-        // Use aggregation to get stats if fetching all companies or if specific type requested
-        // Note: Sort must be applied after projection or initially if matching.
-        // For simplicity, we match first, then lookup/project/sort.
+        const companies = await Company.find(query).sort({ createdAt: -1 });
 
-        const pipeline = [
-            { $match: query },
-            {
-                $lookup: {
-                    from: 'tickets',
-                    localField: '_id',
-                    foreignField: 'companyId',
-                    as: 'tickets'
-                }
-            },
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: '_id',
-                    foreignField: 'company',
-                    as: 'users'
-                }
-            },
-            {
-                $project: {
-                    name: 1,
-                    domain: 1,
-                    type: 1,
-                    industry: 1,
-                    status: 1,
-                    features: 1,
-                    createdAt: 1,
-                    notes: 1,
-                    setupCompleted: 1,
-                    emailConfig: 1,
-                    parentCompany: 1,
-                    ticketCount: { $size: '$tickets' },
-                    agentCount: {
-                        $size: {
-                            $filter: {
-                                input: '$users',
-                                as: 'user',
-                                cond: { $eq: ['$$user.role', 'agent'] }
-                            }
-                        }
-                    },
-                    contactCount: {
-                        $size: {
-                            $filter: {
-                                input: '$users',
-                                as: 'user',
-                                cond: { $eq: ['$$user.role', 'customer'] }
-                            }
-                        }
-                    }
-                }
-            },
-            { $sort: { createdAt: -1 } }
-        ];
+        // Add statistics for each company
+        const companiesWithStats = await Promise.all(companies.map(async (company) => {
+            const companyObj = company.toObject();
 
-        let companies = await Company.aggregate(pipeline);
+            // Count tickets for this company
+            const ticketCount = await Ticket.countDocuments({ companyId: company._id });
 
-        // For admin/superadmin, organize into hierarchical structure
-        if (req.user.role === 'admin' || req.user.role === 'super_admin') {
-            // Separate main companies and client companies
-            const mainCompanies = companies.filter(c => c.type === 'main-company');
-            const clientCompanies = companies.filter(c => c.type === 'client-company');
+            // Count agents (users with role 'agent' in this company)
+            const agentCount = await User.countDocuments({
+                company: company._id,
+                role: 'agent'
+            });
 
-            // Attach client companies to their parent main companies
-            companies = mainCompanies.map(mainCompany => ({
-                ...mainCompany,
-                clientCompanies: clientCompanies.filter(
-                    client => client.parentCompany?.toString() === mainCompany._id.toString()
-                )
-            }));
-        }
+            // Count contacts (users with role 'customer' in this company)
+            const contactCount = await User.countDocuments({
+                company: company._id,
+                role: 'customer'
+            });
+
+            return {
+                ...companyObj,
+                ticketCount,
+                agentCount,
+                contactCount
+            };
+        }));
 
         res.status(200).json({
             status: 'success',
-            data: { companies }
+            data: { companies: companiesWithStats }
         });
     } catch (error) {
         res.status(500).json({
@@ -379,6 +333,52 @@ export const testEmail = async (req, res) => {
         res.status(result.success ? 200 : 400).json({
             status: result.success ? 'success' : 'error',
             message: result.message
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: error.message
+        });
+    }
+};
+
+// @desc    Update company features
+// @route   PUT /api/companies/:id/features
+// @access  Private (Super Admin only)
+export const updateCompanyFeatures = async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+
+        if (!company) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Company not found'
+            });
+        }
+
+        // Only super admin can update features
+        if (req.user.role !== 'super_admin') {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Only super admins can manage company features'
+            });
+        }
+
+        const { features } = req.body;
+
+        // Update features
+        if (features) {
+            company.features = {
+                ...company.features,
+                ...features
+            };
+        }
+
+        await company.save();
+
+        res.status(200).json({
+            status: 'success',
+            data: { company }
         });
     } catch (error) {
         res.status(500).json({

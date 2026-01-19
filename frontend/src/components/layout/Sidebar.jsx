@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { useFeatures } from "../../contexts/FeaturesContext";
 import {
   LayoutDashboard,
   Ticket,
@@ -40,23 +41,23 @@ import {
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Tickets", href: "/tickets", icon: Ticket },
-  { name: "Contacts", href: "/contacts", icon: Contact, roles: ["superadmin", "company_manager", "agent"] },
-  { name: "Companies", href: "/companies", icon: Building2, roles: ["superadmin", "company_manager", "agent", "admin"] },
+  { name: "Tickets", href: "/tickets", icon: Ticket, roles: ["company_manager", "agent"] },
+  { name: "Contacts", href: "/contacts", icon: Contact, roles: ["company_manager", "agent"] },
+  { name: "Companies", href: "/companies", icon: Building2, roles: ["superadmin", "company_manager", "agent"] },
   { name: "Reports", href: "/reports", icon: BarChart3, roles: ["superadmin", "company_manager"] },
 ];
 
 const adminNavigation = [
-  { name: "User Management", href: "/admin/users", icon: UserCog, roles: ["superadmin", "admin"] },
-  { name: "Teams", href: "/admin/teams", icon: Users, roles: ["superadmin", "admin"] },
-  { name: "Permissions", href: "/admin/permissions", icon: Shield, roles: ["superadmin", "admin"] },
-  { name: "Report Builder", href: "/admin/reports", icon: FileText, roles: ["superadmin", "admin"] },
-  { name: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardList, roles: ["superadmin", "admin"] },
-  { name: "Settings", href: "/admin/settings", icon: Settings, roles: ["superadmin", "company_manager", "admin"] },
+  { name: "Teams", href: "/admin/teams", icon: Users, roles: ["superadmin"] },
+  { name: "Permissions", href: "/admin/permissions", icon: Shield, roles: ["superadmin"] },
+  { name: "Report Builder", href: "/admin/reports", icon: FileText, roles: ["superadmin"] },
+  { name: "Audit Logs", href: "/admin/audit-logs", icon: ClipboardList, roles: ["superadmin"] },
+  { name: "Settings", href: "/admin/settings", icon: Settings, roles: ["superadmin", "company_manager"] },
 ];
 
 export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
   const { user, isSuperAdmin, logout } = useAuth();
+  const { hasFeature } = useFeatures();
   const navigate = useNavigate();
   const isCollapsed = !open && !isMobile;
 
@@ -95,7 +96,16 @@ export default function Sidebar({ open, onToggle, onNavigate, isMobile }) {
   );
 
   // Combine: always-visible items + role-based items
-  const filteredNav = [...alwaysVisibleNav, ...roleBasedNav];
+  const filteredNav = [...alwaysVisibleNav, ...roleBasedNav].filter((item) => {
+    // Check feature access for specific navigation items
+    if (item.name === "Companies" && !isSuperAdmin && !hasFeature('clientCompanies')) {
+      return false;
+    }
+    if (item.name === "Reports" && !isSuperAdmin && !hasFeature('reports')) {
+      return false;
+    }
+    return true;
+  });
 
   const handleNavClick = () => {
     if (onNavigate) {
