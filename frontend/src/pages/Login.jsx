@@ -74,7 +74,24 @@ export default function Login() {
             {/* Demo credentials */}
             <div className="rounded-lg bg-accent p-3 text-sm">
               <p className="font-medium mb-2">Demo Accounts (Click to fill):</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full text-xs justify-start h-auto py-2"
+                  onClick={() => {
+                    setEmail("superadmin@test.com");
+                    setPassword("password123");
+                  }}
+                >
+                  <div className="flex flex-col items-start hidden sm:flex">
+                    <span className="font-semibold">Super Admin</span>
+                    <span className="text-muted-foreground font-normal">superadmin@test.com</span>
+                  </div>
+                  <div className="flex flex-col items-start sm:hidden">
+                    <span className="font-semibold">S. Admin</span>
+                  </div>
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
@@ -97,13 +114,13 @@ export default function Login() {
                   variant="outline"
                   className="w-full text-xs justify-start h-auto py-2"
                   onClick={() => {
-                    setEmail("manager1@client1.com");
+                    setEmail("manager.c1@test.com");
                     setPassword("password123");
                   }}
                 >
                   <div className="flex flex-col items-start hidden sm:flex">
                     <span className="font-semibold">Manager</span>
-                    <span className="text-muted-foreground font-normal">manager1@client1.com</span>
+                    <span className="text-muted-foreground font-normal">manager.c1@test.com</span>
                   </div>
                   <div className="flex flex-col items-start sm:hidden">
                     <span className="font-semibold">Manager</span>
@@ -114,13 +131,13 @@ export default function Login() {
                   variant="outline"
                   className="w-full text-xs justify-start h-auto py-2"
                   onClick={() => {
-                    setEmail("agent1@client1.com");
+                    setEmail("agent1.c1@test.com");
                     setPassword("password123");
                   }}
                 >
                   <div className="flex flex-col items-start hidden sm:flex">
                     <span className="font-semibold">Agent</span>
-                    <span className="text-muted-foreground font-normal">agent1@client1.com</span>
+                    <span className="text-muted-foreground font-normal">agent1.c1@test.com</span>
                   </div>
                   <div className="flex flex-col items-start sm:hidden">
                     <span className="font-semibold">Agent</span>

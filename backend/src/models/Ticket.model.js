@@ -45,6 +45,12 @@ const ticketSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Company'
     },
+    to: [{
+        type: String
+    }],
+    cc: [{
+        type: String
+    }],
     tags: [{
         type: String
     }],

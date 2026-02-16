@@ -117,9 +117,11 @@ export function AuthProvider({ children }) {
     updateUserCompany,
     needsSetup,
     isSuperAdmin: user?.role === "superadmin",
-    isManager: user?.role === "company_manager" || user?.role === "superadmin",
-    isAgent: user?.role === "agent" || user?.role === "company_manager" || user?.role === "superadmin",
+    isManager: user?.role === "company_manager",
+    isAgent: user?.role === "agent",
     isCustomer: user?.role === "customer",
+    // Helper for "Staff" access (anyone who is not a customer)
+    isStaff: user && ['superadmin', 'admin', 'company_manager', 'agent'].includes(user.role)
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

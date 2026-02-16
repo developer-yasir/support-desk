@@ -37,7 +37,7 @@ export const register = async (req, res) => {
         let companyId = undefined;
 
         // If registering as manager, create the company
-        if (role === 'manager') {
+        if (role === 'company_manager') {
             if (!companyName) {
                 return res.status(400).json({
                     status: 'error',
@@ -78,7 +78,7 @@ export const register = async (req, res) => {
         const token = generateToken(user._id);
 
         // Check if manager needs to complete company setup
-        const needsSetup = role === 'manager' && companyId;
+        const needsSetup = role === 'company_manager' && companyId;
 
         res.status(201).json({
             status: 'success',
@@ -139,7 +139,7 @@ export const login = async (req, res) => {
         const token = generateToken(user._id);
 
         // Check if manager needs to complete company setup
-        const needsSetup = user.role === 'manager' && user.company && !user.company.setupCompleted;
+        const needsSetup = user.role === 'company_manager' && user.company && !user.company.setupCompleted;
 
         res.status(200).json({
             status: 'success',

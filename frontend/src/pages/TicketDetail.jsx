@@ -354,6 +354,41 @@ export default function TicketDetail() {
     setIsInternal(false);
   };
 
+  const handleUpdateProperties = async () => {
+    try {
+      const updateData = {
+        status: ticketStatus,
+        priority: ticketPriority,
+        assignedTo: ticketAgent === "unassigned" ? null : ticketAgent,
+        category: ticketCategory,
+      };
+
+      const res = await api.updateTicket(id, updateData);
+      const updatedTicket = res.data.ticket;
+
+      // Ensure local state is in sync with populated data
+      setTicket(prev => ({
+        ...prev,
+        ...updatedTicket,
+        // Map backend fields to frontend expected structure (messages)
+        messages: updatedTicket.comments?.map(c => ({
+          id: c._id,
+          content: c.message,
+          author: c.user?.name || "Unknown",
+          authorId: c.user?._id,
+          isInternal: c.isInternal,
+          createdAt: c.createdAt,
+          attachments: c.attachments || []
+        })) || prev.messages
+      }));
+
+      toast.success("Ticket properties updated successfully");
+    } catch (error) {
+      console.error("Failed to update ticket properties:", error);
+      toast.error("Failed to update ticket: " + (error.message || "Unknown error"));
+    }
+  };
+
   const handleCannedResponseSelect = (content) => {
     // Append to existing content
     setReplyContent((prev) => (prev ? prev + "<br/>" + content : content));
@@ -1053,18 +1088,14 @@ export default function TicketDetail() {
               {/* Agent */}
               <div className="space-y-2">
                 <Label className="text-sm">Agent</Label>
-                <Select value={ticketAgent} onValueChange={(val) => {
-                  setTicketAgent(val);
-                  const agentName = val === "unassigned" ? "Unassigned" : AGENTS.find(a => a.id === val)?.name;
-                  toast.success(`Agent changed to ${agentName}`);
-                }}>
+                <Select value={ticketAgent} onValueChange={setTicketAgent}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="--" />
                   </SelectTrigger>
                   <SelectContent className="z-50 bg-popover">
                     <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {AGENTS.map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
+                    {allContacts.filter(c => c.role === 'agent' || c.role === 'company_manager').map((agent) => (
+                      <SelectItem key={agent._id} value={agent._id}>
                         {agent.name}
                       </SelectItem>
                     ))}
@@ -1122,7 +1153,7 @@ export default function TicketDetail() {
 
           {/* Update button */}
           <div className="p-4 border-t">
-            <Button className="w-full" onClick={() => toast.success("Ticket updated!")}>
+            <Button className="w-full" onClick={handleUpdateProperties}>
               Update
             </Button>
           </div>

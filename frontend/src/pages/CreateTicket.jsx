@@ -43,12 +43,11 @@ import { cn } from "@/lib/utils";
 import TicketTemplatesDialog from "../components/tickets/TicketTemplatesDialog";
 
 export default function CreateTicket() {
-  const { user, isCustomer, isAgent } = useAuth();
+  const { user, isCustomer, isAgent, isStaff } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
-  const [toOpen, setToOpen] = useState(false);
   const [ccOpen, setCcOpen] = useState(false);
   const [newContactOpen, setNewContactOpen] = useState(false);
 
@@ -95,23 +94,26 @@ export default function CreateTicket() {
   // Check if search looks like an email
   const isEmail = (str) => str.includes("@");
 
-  // Quick create contact from search (opens dialog)
-  const handleQuickCreateContact = () => {
-    const searchTerm = contactSearch.trim();
-    if (!searchTerm) return;
-
-    const name = isEmail(searchTerm) ? searchTerm.split("@")[0] : searchTerm;
-    const email = isEmail(searchTerm) ? searchTerm : "";
-
-    setNewContactData({
-      name: name,
-      email: email,
-      phone: "",
-      companyId: formData.companyId || "", // Pre-fill company if selected
-      role: "customer",
-    });
-    setContactOpen(false);
-    setNewContactOpen(true);
+  // Auto-create contact without dialog
+  const autoCreateContact = async (email, companyId, companyName) => {
+    if (!email || !email.includes("@")) return null;
+    try {
+      const name = email.split("@")[0].replace(/[._]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const res = await api.createContact({
+        name,
+        email,
+        company: companyId,
+        role: "customer"
+      });
+      const newContact = res.data.user;
+      setContacts(prev => [...prev, newContact]);
+      toast.success(`Auto-created contact for ${email}`);
+      return newContact;
+    } catch (err) {
+      console.error("Auto-create failed:", err);
+      toast.error(`Failed to auto-create contact for ${email}`);
+      return null;
+    }
   };
 
   const [formData, setFormData] = useState({
@@ -123,9 +125,7 @@ export default function CreateTicket() {
     companyId: "",
     companyName: "",
     agentId: "",
-    toContacts: [],
-    toContacts: [],
-    ccContacts: [],
+    cc: [], // Can contain { type: 'user', id: string, email: string } or { type: 'company', id: string, name: string }
   });
 
   const [attachments, setAttachments] = useState([]);
@@ -150,37 +150,37 @@ export default function CreateTicket() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleAddToContact = (contactId) => {
-    if (!formData.toContacts.includes(contactId)) {
-      setFormData((prev) => ({
-        ...prev,
-        toContacts: [...prev.toContacts, contactId],
-      }));
+  const handleAddCcEntity = async (entity) => {
+    // entity: { type: 'user' | 'company' | 'email', value: string }
+
+    let ccItem = null;
+    if (entity.type === 'user') {
+      const user = [...contacts, ...agents].find(u => u._id === entity.value);
+      if (user) ccItem = { type: 'user', id: user._id, label: user.name, email: user.email };
+    } else if (entity.type === 'company') {
+      const company = companies.find(c => c._id === entity.value);
+      if (company) ccItem = { type: 'company', id: company._id, label: company.name };
+    } else if (entity.type === 'email') {
+      // Auto-create for CC
+      const newContact = await autoCreateContact(entity.value, formData.companyId);
+      if (newContact) {
+        ccItem = { type: 'user', id: newContact._id, label: newContact.name, email: newContact.email };
+      }
     }
-    setToOpen(false);
-  };
 
-  const handleRemoveToContact = (contactId) => {
-    setFormData((prev) => ({
-      ...prev,
-      toContacts: prev.toContacts.filter((id) => id !== contactId),
-    }));
-  };
-
-  const handleAddCcContact = (contactId) => {
-    if (!formData.ccContacts.includes(contactId)) {
-      setFormData((prev) => ({
+    if (ccItem && !formData.cc.some(item => (item.id && item.id === ccItem.id) || (item.email && item.email === ccItem.email))) {
+      setFormData(prev => ({
         ...prev,
-        ccContacts: [...prev.ccContacts, contactId],
+        cc: [...prev.cc, ccItem]
       }));
     }
     setCcOpen(false);
   };
 
-  const handleRemoveCcContact = (contactId) => {
+  const handleRemoveCcItem = (index) => {
     setFormData((prev) => ({
       ...prev,
-      ccContacts: prev.ccContacts.filter((id) => id !== contactId),
+      cc: prev.cc.filter((_, i) => i !== index),
     }));
   };
 
@@ -309,8 +309,20 @@ export default function CreateTicket() {
       formDataToSend.append('description', formData.description);
       formDataToSend.append('category', formData.category);
       formDataToSend.append('priority', formData.priority);
-      if (formData.companyName) formDataToSend.append('company', formData.companyName);
-      if (isAgent && formData.contactId) formDataToSend.append('createdBy', formData.contactId);
+      if (formData.companyId) {
+        const company = companies.find(c => c._id === formData.companyId);
+        if (company) formDataToSend.append('company', company.name);
+      }
+      if (isStaff && formData.contactId) formDataToSend.append('createdBy', formData.contactId);
+
+      // Append CC Entities
+      formData.cc.forEach(item => {
+        if (item.type === 'user') {
+          formDataToSend.append('cc', item.email);
+        } else if (item.type === 'company') {
+          formDataToSend.append('cc', item.label); // Send company name
+        }
+      });
 
       // Append attachments
       attachments.forEach(file => {
@@ -376,7 +388,7 @@ export default function CreateTicket() {
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Contact Selection with Search - Only for agents */}
-            {isAgent && (
+            {isStaff && (
               <div className="space-y-4">
 
                 {/* Company Selection */}
@@ -405,26 +417,35 @@ export default function CreateTicket() {
                         <CommandList>
                           <CommandEmpty>No company found.</CommandEmpty>
                           <CommandGroup>
-                            {companies.map((company) => (
-                              <CommandItem
-                                key={company._id}
-                                value={company.name}
-                                onSelect={() => {
-                                  handleCompanyChange(company._id);
-                                  setCompanyOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    formData.companyId === company._id
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                {company.name}
-                              </CommandItem>
-                            ))}
+                            {companies
+                              .filter((company) => {
+                                // Filter: Show own company or client companies that belong to user's company
+                                if (user.company?._id) {
+                                  const userCompanyId = user.company._id;
+                                  return company._id === userCompanyId || (company.parentCompany === userCompanyId || (company.parentCompany?._id === userCompanyId));
+                                }
+                                return true; // Fallback for Superadmins or if company not loaded
+                              })
+                              .map((company) => (
+                                <CommandItem
+                                  key={company._id}
+                                  value={company.name}
+                                  onSelect={() => {
+                                    handleCompanyChange(company._id);
+                                    setCompanyOpen(false);
+                                  }}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      formData.companyId === company._id
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                    )}
+                                  />
+                                  {company.name}
+                                </CommandItem>
+                              ))}
                           </CommandGroup>
                         </CommandList>
                       </Command>
@@ -434,7 +455,7 @@ export default function CreateTicket() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="contact">Contact *</Label>
+                    <Label htmlFor="contact">From (Requester) *</Label>
                     <Button
                       type="button"
                       variant="ghost"
@@ -478,29 +499,28 @@ export default function CreateTicket() {
                           placeholder="Search by name, email, or company..."
                           value={contactSearch}
                           onValueChange={setContactSearch}
+                          onKeyDown={async (e) => {
+                            if (e.key === 'Enter') {
+                              const val = contactSearch.trim();
+                              if (isEmail(val)) {
+                                const newContact = await autoCreateContact(val, formData.companyId);
+                                if (newContact) {
+                                  handleContactChange(newContact._id);
+                                  setContactOpen(false);
+                                  setContactSearch("");
+                                }
+                              }
+                            }
+                          }}
                         />
                         <CommandList>
                           <CommandEmpty>
-                            <div className="py-2 px-2">
+                            <div className="py-2 px-2 text-sm text-muted-foreground">
                               {contacts.length === 0 ? "No contacts available." :
-                                `No contact found for "${contactSearch}"` +
-                                (formData.companyId ? " in selected company." : "")
+                                `No contact found for "${contactSearch}"`
                               }
+                              {contactSearch && isEmail(contactSearch) && " Press Enter to create automatically."}
                             </div>
-                            {contactSearch && (
-                              <div className="px-2 pb-2">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  className="w-full"
-                                  onClick={handleQuickCreateContact}
-                                >
-                                  <UserPlus className="h-4 w-4 mr-2" />
-                                  Create "{contactSearch}"
-                                </Button>
-                              </div>
-                            )}
                           </CommandEmpty>
                           <CommandGroup>
                             {contacts
@@ -571,94 +591,24 @@ export default function CreateTicket() {
               </div>
             )}
 
-            {/* To Field - Multi-select contacts */}
-            {isAgent && (
-              <div className="space-y-2">
-                <Label>To</Label>
-                <div className="flex flex-wrap gap-2 mb-2">
-                  {formData.toContacts.map((contactId) => {
-                    const contact = contacts.find((c) => c._id === contactId);
-                    return contact ? (
-                      <Badge key={contactId} variant="secondary" className="gap-1 pr-1">
-                        {contact.name}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveToContact(contactId)}
-                          className="ml-1 rounded-full hover:bg-muted p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ) : null;
-                  })}
-                </div>
-                <Popover open={toOpen} onOpenChange={setToOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      className="w-full justify-between font-normal"
-                    >
-                      <span className="text-muted-foreground">Add recipients...</span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[400px] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search contacts..." />
-                      <CommandList>
-                        <CommandEmpty>No contact found.</CommandEmpty>
-                        <CommandGroup>
-                          {contacts.filter((c) => {
-                            if (formData.toContacts.includes(c._id)) return false;
-                            if (formData.companyId) {
-                              const cId = c.company?._id || c.company;
-                              // Simplified check: if contact has company and it matches
-                              return cId === formData.companyId;
-                            }
-                            return true;
-                          }).map((contact) => (
-                            <CommandItem
-                              key={contact._id}
-                              value={`${contact.name} ${contact.email}`}
-                              onSelect={() => handleAddToContact(contact._id)}
-                            >
-                              <div className="flex flex-col">
-                                <span className="font-medium">{contact.name}</span>
-                                <span className="text-sm text-muted-foreground">
-                                  {contact.email}
-                                </span>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-            )}
-
-            {/* CC Field - Multi-select contacts */}
-            {isAgent && (
+            {/* CC Field - Multi-select companies, agents, or new emails */}
+            {isStaff && (
               <div className="space-y-2">
                 <Label>CC</Label>
                 <div className="flex flex-wrap gap-2 mb-2">
-                  {formData.ccContacts.map((contactId) => {
-                    const contact = contacts.find((c) => c._id === contactId);
-                    return contact ? (
-                      <Badge key={contactId} variant="outline" className="gap-1 pr-1">
-                        {contact.name}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveCcContact(contactId)}
-                          className="ml-1 rounded-full hover:bg-muted p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ) : null;
-                  })}
+                  {formData.cc.map((item, index) => (
+                    <Badge key={index} variant="outline" className="gap-1 pr-1">
+                      {item.type === 'company' && <Building2 className="h-3 w-3 mr-1 opacity-70" />}
+                      {item.label}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCcItem(index)}
+                        className="ml-1 rounded-full hover:bg-muted p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
                 </div>
                 <Popover open={ccOpen} onOpenChange={setCcOpen}>
                   <PopoverTrigger asChild>
@@ -667,37 +617,86 @@ export default function CreateTicket() {
                       role="combobox"
                       className="w-full justify-between font-normal"
                     >
-                      <span className="text-muted-foreground">Add CC recipients...</span>
+                      <span className="text-muted-foreground">Add CC (Company, Agent, or Email)...</span>
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-[400px] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Search contacts..." />
-                      <CommandList>
-                        <CommandEmpty>No contact found.</CommandEmpty>
-                        <CommandGroup>
-                          {contacts.filter((c) => {
-                            if (formData.ccContacts.includes(c._id)) return false;
-                            if (formData.companyId) {
-                              const cId = c.company?._id || c.company;
-                              return cId === formData.companyId;
+                    <Command shouldFilter={false}>
+                      <CommandInput
+                        placeholder="Search or enter email..."
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter') {
+                            const val = e.currentTarget.value.trim();
+                            if (isEmail(val)) {
+                              await handleAddCcEntity({ type: 'email', value: val });
+                              e.currentTarget.value = '';
                             }
-                            return true;
-                          }).map((contact) => (
-                            <CommandItem
-                              key={contact._id}
-                              value={`${contact.name} ${contact.email}`}
-                              onSelect={() => handleAddCcContact(contact._id)}
-                            >
-                              <div className="flex flex-col">
-                                <span className="font-medium">{contact.name}</span>
-                                <span className="text-sm text-muted-foreground">
-                                  {contact.email}
-                                </span>
-                              </div>
-                            </CommandItem>
-                          ))}
+                          }
+                        }}
+                      />
+                      <CommandList>
+                        <CommandEmpty>
+                          <div className="p-2 text-sm text-muted-foreground">
+                            No results. Enter an email and press Enter to add.
+                          </div>
+                        </CommandEmpty>
+                        <CommandGroup heading="Companies">
+                          {companies
+                            .filter(company => {
+                              if (!user.company?._id) return true;
+                              const userCompanyId = user.company._id;
+                              return company._id === userCompanyId || (company.parentCompany === userCompanyId || company.parentCompany?._id === userCompanyId);
+                            })
+                            .map((company) => (
+                              <CommandItem
+                                key={company._id}
+                                value={company.name}
+                                onSelect={() => handleAddCcEntity({ type: 'company', value: company._id })}
+                              >
+                                <Building2 className="mr-2 h-4 w-4 opacity-70" />
+                                {company.name}
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                        <CommandGroup heading="Agents">
+                          {agents
+                            .filter(agent => {
+                              if (!user.company?._id) return true;
+                              const userCompanyId = user.company._id;
+                              const agentCompanyId = agent.company?._id || agent.company;
+                              return agentCompanyId === userCompanyId;
+                            })
+                            .map((agent) => (
+                              <CommandItem
+                                key={agent._id}
+                                value={agent.name}
+                                onSelect={() => handleAddCcEntity({ type: 'user', value: agent._id })}
+                              >
+                                {agent.name} ({agent.email})
+                              </CommandItem>
+                            ))}
+                        </CommandGroup>
+                        <CommandGroup heading="Contacts">
+                          {contacts
+                            .filter(contact => {
+                              if (!user.company?._id) return true;
+                              const userCompanyId = user.company._id;
+                              const contactCompanyId = contact.company?._id || contact.company;
+                              const contactCompany = companies.find(c => c._id === contactCompanyId);
+
+                              return contactCompanyId === userCompanyId ||
+                                (contactCompany && (contactCompany.parentCompany === userCompanyId || contactCompany.parentCompany?._id === userCompanyId));
+                            })
+                            .map((contact) => (
+                              <CommandItem
+                                key={contact._id}
+                                value={contact.name}
+                                onSelect={() => handleAddCcEntity({ type: 'user', value: contact._id })}
+                              >
+                                {contact.name} ({contact.email})
+                              </CommandItem>
+                            ))}
                         </CommandGroup>
                       </CommandList>
                     </Command>
@@ -758,7 +757,7 @@ export default function CreateTicket() {
             </div>
 
             {/* Agent Assignment - Only for agents/admins */}
-            {isAgent && (
+            {isStaff && (
               <div className="space-y-2">
                 <Label htmlFor="agent">Assign To</Label>
                 <Select

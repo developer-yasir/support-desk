@@ -20,6 +20,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious
+} from "@/components/ui/pagination";
 import {
   Plus,
   Search,
@@ -128,17 +137,17 @@ const StatusDropdown = ({ status, ticketId, onUpdate }) => {
   );
 };
 
-const AgentDropdown = ({ ticketId, agentId, customerName, onUpdate, agents }) => {
+const AgentDropdown = ({ ticketId, agentId, onUpdate, agents }) => {
   const agent = agents.find(a => a._id === agentId);
+  const agentName = agent?.name || (agentId ? 'Unknown' : 'Unassigned');
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-1 text-sm text-muted-foreground hover:bg-accent rounded px-2 py-1 transition-colors" onClick={(e) => e.stopPropagation()}>
-          <User className="h-3.5 w-3.5" />
-          <span className="truncate max-w-[80px]">{customerName?.slice(0, 10)}...</span>
-          <span>/</span>
-          <span>{agent?.name?.split(' ')[0] || (agentId ? 'Unknown' : '--')}</span>
-          <ChevronDown className="h-3 w-3" />
+        <button className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:bg-accent rounded px-2 py-1 transition-colors border border-transparent hover:border-border" onClick={(e) => e.stopPropagation()}>
+          <User className="h-3 w-3" />
+          <span className="truncate max-w-[100px]">{agentName}</span>
+          <ChevronDown className="h-2.5 w-2.5" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40 z-50 bg-popover">
@@ -184,7 +193,6 @@ const DEFAULT_FILTERS = {
 };
 
 export default function Tickets() {
-  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const initialSearch = searchParams.get("search") || "";
 
@@ -200,6 +208,12 @@ export default function Tickets() {
     const saved = localStorage.getItem("ticketFilters");
     return saved ? JSON.parse(saved) : DEFAULT_FILTERS;
   });
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 20 });
+  const { user, isAgent } = useAuth();
+
+  // Strict check for the 'agent' role to enforce isolation
+  const isStrictAgent = user?.role === 'agent';
+  const [activeTab, setActiveTab] = useState(isStrictAgent ? "mine" : "all");
 
   // Save filters to localStorage whenever they change
   useEffect(() => {
@@ -207,26 +221,46 @@ export default function Tickets() {
   }, [filters]);
   const [activeViewId, setActiveViewId] = useState(null);
 
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      // Determine assignedTo filter based on activeTab
+      let assignedToFilter = filters.agent;
+      if (activeTab === "mine") assignedToFilter = user?.id;
+      if (activeTab === "unassigned") assignedToFilter = "unassigned";
+
+      const fetchParams = {
+        page: pagination.page,
+        limit: pagination.limit
+      };
+
+      if (search) fetchParams.search = search;
+      if (assignedToFilter !== "any") fetchParams.assignedTo = assignedToFilter;
+      if (filters.statuses.length > 0) fetchParams.status = filters.statuses[0];
+      if (filters.priority !== "any") fetchParams.priority = filters.priority;
+
+      const [ticketsData, agentsData] = await Promise.all([
+        api.getTickets(fetchParams),
+        api.getAgents()
+      ]);
+
+      setTickets(ticketsData.data.tickets);
+      setPagination(ticketsData.pagination || { ...pagination, total: ticketsData.results });
+      setAgents(agentsData.data.users);
+    } catch (error) {
+      toast.error("Failed to fetch data: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [ticketsData, agentsData] = await Promise.all([
-          api.getTickets(),
-          api.getAgents()
-        ]);
-
-        setTickets(ticketsData.data.tickets);
-        setAgents(agentsData.data.users);
-      } catch (error) {
-        toast.error("Failed to fetch data: " + error.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+    const timer = setTimeout(() => {
+      fetchData();
+    }, 500); // Debounce search
+    return () => clearTimeout(timer);
+  }, [pagination.page, activeTab, filters, search]);
 
   // Calculate active filter count
   const activeFilterCount = useMemo(() => {
@@ -245,16 +279,18 @@ export default function Tickets() {
   }, [filters]);
 
   const filteredTickets = useMemo(() => {
+    // Sorting only as server handles filtering/search mostly
+    // We still keep a tiny bit of local filtering if searchFields (advanced search) is used but not sent to server
+    // Actually better to simplify. 
     let currentTickets = tickets;
 
-    // Search filter
-    if (search) {
-      const searchLower = search.toLowerCase();
+    // Search fields filter (local for now)
+    if (filters.searchFields) {
+      const searchLower = filters.searchFields.toLowerCase();
       currentTickets = currentTickets.filter(
         (t) =>
           t.subject.toLowerCase().includes(searchLower) ||
-          t._id?.toLowerCase().includes(searchLower) ||
-          t.createdBy?.name?.toLowerCase().includes(searchLower)
+          t.description.toLowerCase().includes(searchLower)
       );
     }
 
@@ -404,32 +440,20 @@ export default function Tickets() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 bg-background">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b gap-3">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9 hidden sm:flex"
-              onClick={() => setShowSavedViews(!showSavedViews)}
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-            </Button>
-            <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-base md:text-lg font-semibold truncate">All unresolved tickets</h1>
-              <Star className="h-4 w-4 text-muted-foreground cursor-pointer hover:text-yellow-500 hidden sm:block" />
-              <Badge variant="secondary" className="rounded-full bg-muted text-muted-foreground flex-shrink-0">
-                {filteredTickets.length}
-              </Badge>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Button variant="outline" size="sm" className="hidden lg:flex">
-              Explore your plan
-            </Button>
+        {/* Tabs and Action Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 md:px-6 py-3 border-b gap-3 bg-muted/20">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full sm:w-auto">
+            <TabsList className={`grid w-full ${isStrictAgent ? 'grid-cols-1 sm:w-[100px]' : 'grid-cols-3 sm:w-[300px]'}`}>
+              <TabsTrigger value="mine">Mine</TabsTrigger>
+              {!isStrictAgent && <TabsTrigger value="unassigned">Unassigned</TabsTrigger>}
+              {!isStrictAgent && <TabsTrigger value="all">All</TabsTrigger>}
+            </TabsList>
+          </Tabs>
+          <div className="flex items-center gap-2">
             <Button asChild size="sm">
               <Link to="/tickets/new">
                 <Plus className="mr-1 md:mr-2 h-4 w-4" />
-                <span className="hidden sm:inline">New</span>
+                <span className="hidden sm:inline">New Ticket</span>
               </Link>
             </Button>
             <Button
@@ -485,16 +509,36 @@ export default function Tickets() {
               <Download className="mr-2 h-4 w-4" />
               Export
             </Button>
-            <div className="hidden md:flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <span>
-                1 - {filteredTickets.length} of {filteredTickets.length}
+                {pagination.total > 0 ? (pagination.page - 1) * pagination.limit + 1 : 0} - {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
               </span>
-              <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+              <Pagination className="w-auto ml-2">
+                <PaginationContent>
+                  <PaginationItem>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                      disabled={pagination.page === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                  </PaginationItem>
+                  <PaginationItem>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.pages, prev.page + 1) }))}
+                      disabled={pagination.page === pagination.pages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
             </div>
             <Button
               variant={showFilters ? "default" : "outline"}
@@ -632,7 +676,6 @@ export default function Tickets() {
                           <AgentDropdown
                             ticketId={ticket._id}
                             agentId={ticket.assignedTo?._id || ticket.assignedTo}
-                            customerName={ticket.createdBy?.name}
                             onUpdate={handleTicketQuickUpdate}
                             agents={agents}
                           />

@@ -13,7 +13,7 @@ export const getCompanies = async (req, res) => {
         let query = {};
 
         // If manager, only show their own company OR companies they created
-        if (req.user.role === 'manager') {
+        if (req.user.role === 'company_manager') {
             const managerFilter = {
                 $or: [
                     { _id: req.user.company },

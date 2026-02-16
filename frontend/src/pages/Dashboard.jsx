@@ -52,47 +52,49 @@ const StatCard = ({ title, value, icon: Icon, description, trend }) => (
 );
 
 export default function Dashboard() {
-  const { user, isManager, isSuperAdmin } = useAuth();
+  const { user, isManager, isSuperAdmin, isAgent, isStaff } = useAuth();
   const { hasFeature } = useFeatures();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [recentTickets, setRecentTickets] = useState([]);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin' || user?.role === 'super_admin';
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
+    const fetchDashboardData = async (isInitial = true) => {
       try {
-        setLoading(true);
-
-        // Super admins don't need ticket data
-        if (isSuperAdmin) {
-          setLoading(false);
-          return;
-        }
+        if (isInitial) setLoading(true);
 
         // Parallel fetch for better performance
         const [statsData, ticketsData] = await Promise.all([
           api.getDashboardStats(),
-          // Don't fetch tickets if Admin (it redirects anyway or returns empty)
-          // But our API.getTickets calls endpoint. Endpoint returns empty for Admin.
-          // So it's safe to call, but we can optimize.
-          user?.role === 'admin' ? Promise.resolve({ data: { tickets: [] } }) : api.getTickets()
+          // Don't fetch tickets if Admin/SuperAdmin (it redirects anyway or returns empty)
+          isAdmin ? Promise.resolve({ data: { tickets: [] } }) : api.getTickets()
         ]);
 
-        setStats(statsData.data.stats);
-        if (ticketsData.data.tickets) {
+        if (statsData.status === 'success') {
+          setStats(statsData.data.stats);
+        }
+
+        if (ticketsData?.data?.tickets) {
           setRecentTickets(ticketsData.data.tickets.slice(0, 5));
         }
       } catch (error) {
         console.error("Dashboard fetch error:", error);
       } finally {
-        setLoading(false);
+        if (isInitial) setLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, [isSuperAdmin]);
+
+    // Polling for real-time updates (every 30 seconds)
+    const interval = setInterval(() => {
+      fetchDashboardData(false);
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [isAdmin]);
 
   if (loading) {
     return (
@@ -102,16 +104,34 @@ export default function Dashboard() {
     );
   }
 
-  // Admin Dashboard View
-  if (user?.role === 'admin' || user?.role === 'superadmin') {
-    const { adminStats } = stats || {};
+  // Admin/SuperAdmin Dashboard View
+  if (isAdmin) {
+    const { adminStats, volume, priority } = stats || {};
+
+    // Sort volume data by date
+    const sortedVolume = volume ? [...volume].sort((a, b) => new Date(a.date) - new Date(b.date)) : [];
+
+    // Colors for Priority Chart
+    const COLORS = {
+      low: '#22c55e',
+      medium: '#eab308',
+      high: '#f97316',
+      urgent: '#ef4444'
+    };
+
+    const priorityChartData = priority ? priority.map(item => ({
+      name: item.name,
+      value: item.value,
+      fill: COLORS[item.name] || '#8884d8'
+    })) : [];
+
     return (
       <div className="space-y-4 md:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">System Overview</h1>
             <p className="text-sm sm:text-base text-muted-foreground">
-              Welcome back, {user?.name}. Here is what's happening in the system.
+              Welcome back, {user?.name}. Here is what's happening across the entire system.
             </p>
           </div>
         </div>
@@ -135,16 +155,106 @@ export default function Dashboard() {
             icon={Building2}
             description="External clients"
           />
+          <StatCard
+            title="Total Tickets"
+            value={stats?.total || 0}
+            icon={Ticket}
+            description="All-time system volume"
+          />
+        </div>
+
+        <div className="grid gap-3 sm:gap-4 md:grid-cols-2">
+          {/* System Ticket Volume */}
+          <Card>
+            <CardHeader className="p-3 sm:p-6">
+              <CardTitle className="text-base sm:text-lg">System Ticket Volume (Last 7 Days)</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">Global ticket creation trend</CardDescription>
+            </CardHeader>
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="h-48 sm:h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  {sortedVolume.length > 0 ? (
+                    <BarChart data={sortedVolume}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                      <XAxis dataKey="date" className="text-xs" />
+                      <YAxis className="text-xs" allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "var(--radius)",
+                        }}
+                      />
+                      <Bar dataKey="tickets" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                      No data available
+                    </div>
+                  )}
+                </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Global Priority Distribution */}
+          <Card>
+            <CardHeader className="p-3 sm:p-6">
+              <CardTitle className="text-base sm:text-lg">Global Priority Distribution</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">Across all companies</CardDescription>
+            </CardHeader>
+            <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+              <div className="h-48 sm:h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  {priorityChartData.length > 0 ? (
+                    <PieChart>
+                      <Pie
+                        data={priorityChartData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {priorityChartData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
+                          borderRadius: "var(--radius)",
+                        }}
+                      />
+                    </PieChart>
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+                      No data available
+                    </div>
+                  )}
+                </ResponsiveContainer>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mt-3 sm:mt-4">
+                {priorityChartData.map((item) => (
+                  <div key={item.name} className="flex items-center gap-1.5 sm:gap-2">
+                    <div
+                      className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full"
+                      style={{ backgroundColor: item.fill }}
+                    />
+                    <span className="text-xs sm:text-sm text-muted-foreground capitalize">{item.name}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         <div className="rounded-lg border bg-card text-card-foreground shadow-sm p-6">
           <div className="flex flex-col space-y-1.5 p-6 pt-0 px-0">
             <h3 className="font-semibold leading-none tracking-tight">System Status</h3>
-            <p className="text-sm text-muted-foreground">All systems operational.</p>
-          </div>
-          {/* Placeholder for more advanced charts/logs */}
-          <div className="h-[200px] flex items-center justify-center border-t border-dashed">
-            <p className="text-muted-foreground text-sm">Select a company to manage features or view specific reports.</p>
+            <p className="text-sm text-muted-foreground">All systems operational. Pulling real-time updates every 30 seconds.</p>
           </div>
         </div>
       </div>

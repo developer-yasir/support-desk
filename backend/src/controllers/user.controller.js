@@ -19,19 +19,17 @@ export const getUsers = async (req, res) => {
             }
         }
 
-        // If manager, force query to their company OR client companies they created
-        if (req.user.role === 'manager') {
-            // 1. Get client companies created by this manager
-            const clientCompanies = await Company.find({ createdBy: req.user.id });
-            const clientCompanyIds = clientCompanies.map(c => c._id);
+        // If manager, force query to their company and its client companies
+        if (req.user.role === 'company_manager') {
+            const userCompany = await Company.findById(req.user.company);
+            let companyIds = [req.user.company];
 
-            // 2. Include own company and client companies
-            query.company = {
-                $in: [
-                    req.user.company,
-                    ...clientCompanyIds
-                ]
-            };
+            if (userCompany && userCompany.type === 'main-company') {
+                const clientCompanies = await Company.find({ parentCompany: userCompany._id });
+                companyIds = [...companyIds, ...clientCompanies.map(c => c._id)];
+            }
+
+            query.company = { $in: companyIds };
         } else if (companyId) {
             query.company = companyId;
         }
@@ -73,7 +71,7 @@ export const createUser = async (req, res) => {
         let userCompany = company;
 
         // Security check for Managers
-        if (req.user.role === 'manager') {
+        if (req.user.role === 'company_manager') {
             // Managers can only create users for their own company
             userCompany = req.user.company;
 
@@ -143,7 +141,7 @@ export const updateUser = async (req, res) => {
     try {
         // Check if user is updating their own profile or is admin
         if (req.params.id !== req.user.id.toString() &&
-            !['super_admin', 'admin', 'manager'].includes(req.user.role)) {
+            !['super_admin', 'admin', 'company_manager'].includes(req.user.role)) {
             return res.status(403).json({
                 status: 'error',
                 message: 'Not authorized to update this user'

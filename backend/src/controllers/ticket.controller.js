@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Ticket from '../models/Ticket.model.js';
 import Company from '../models/Company.model.js';
 import User from '../models/User.model.js';
@@ -8,7 +9,15 @@ import { sendEmail, generateTicketReplyEmail, generateNewTicketEmail } from '../
 // @access  Private
 export const getTickets = async (req, res) => {
     try {
-        const { status, priority, assignedTo, createdBy, company } = req.query;
+        // Sanitize query params to remove 'undefined', 'null' or 'any' strings
+        const params = { ...req.query };
+        Object.keys(params).forEach(key => {
+            if (params[key] === 'undefined' || params[key] === 'null' || params[key] === 'any') {
+                delete params[key];
+            }
+        });
+
+        const { status, priority, assignedTo, createdBy, company, search } = params;
 
         // Build query
         let query = {};
@@ -25,11 +34,12 @@ export const getTickets = async (req, res) => {
         // Filter by role
         if (req.user.role === 'customer') {
             query.createdBy = req.user.id;
-        } else if (req.user.role === 'manager') {
-            // Managers see tickets for:
+        } else if (req.user.role === 'company_manager' || req.user.role === 'agent') {
+            // Managers and Agents see tickets for:
             // 1. Their Employer Company
-            // 2. Client Companies they created
-            // 3. Tickets they personally created
+            // 2. Client Companies if they are part of a Main Company
+            // 3. For Managers: Client Companies they created
+            // 4. Any ticket assigned to them
 
             let allowedCompanyNames = [];
 
@@ -38,52 +48,105 @@ export const getTickets = async (req, res) => {
                 const employerCompany = await Company.findById(req.user.company);
                 if (employerCompany) {
                     allowedCompanyNames.push(employerCompany.name);
+
+                    // 2. If Main Company, include its own Client Companies
+                    if (employerCompany.type === 'main-company') {
+                        const clientCompanies = await Company.find({ parentCompany: employerCompany._id });
+                        const clientNames = clientCompanies.map(c => c.name);
+                        allowedCompanyNames = [...allowedCompanyNames, ...clientNames];
+                    }
                 }
             }
 
-            // 2. Get Client Companies created by Manager
-            const createdCompanies = await Company.find({ createdBy: req.user.id });
-            const createdCompanyNames = createdCompanies.map(c => c.name);
-            allowedCompanyNames = [...allowedCompanyNames, ...createdCompanyNames];
+            // 3. For Managers: Get Client Companies created by Manager (if not already included)
+            if (req.user.role === 'company_manager') {
+                const createdCompanies = await Company.find({ createdBy: req.user.id });
+                const createdCompanyNames = createdCompanies.map(c => c.name);
+                allowedCompanyNames = [...new Set([...allowedCompanyNames, ...createdCompanyNames])];
+            }
 
-            // 3. Construct Query
-            if (allowedCompanyNames.length > 0) {
+            // 4. Construct Query
+            let companyMatch = { company: { $in: allowedCompanyNames } };
+
+            if (req.user.role === 'agent') {
+                // Strict view: Only tickets assigned to this agent
+                query.assignedTo = req.user.id;
+            } else if (req.user.role === 'company_manager' && employerCompany && employerCompany.type === 'main-company') {
+                // Main Company Manager: Involvement rule for other companies
+                const companyAgents = await User.find({ company: employerCompany._id, role: 'agent' });
+                const agentIds = [req.user.id, ...companyAgents.map(a => a._id)];
+                const agentEmails = [req.user.email.toLowerCase(), ...companyAgents.map(a => a.email.toLowerCase())];
+
+                const employerCompanyName = employerCompany.name;
+                const otherCompanyNames = allowedCompanyNames.filter(c => c !== employerCompanyName);
+
                 query.$or = [
-                    { company: { $in: allowedCompanyNames } },
+                    { company: employerCompanyName }, // Full access to own company
+                    {
+                        company: { $in: otherCompanyNames },
+                        $or: [
+                            { createdBy: { $in: agentIds } },
+                            { assignedTo: { $in: agentIds } },
+                            { to: { $in: agentEmails } },
+                            { cc: { $in: agentEmails } }
+                        ]
+                    },
+                    { assignedTo: req.user.id },
                     { createdBy: req.user.id }
                 ];
             } else {
-                query.createdBy = req.user.id;
+                // Regular Manager or Staff
+                query.company = { $in: allowedCompanyNames };
             }
-        } else if (req.user.role === 'agent') {
-            // Check for permissions
-            const hasFullAccess = req.user.permissions && req.user.permissions.includes('view_all_tickets');
-
-            if (!hasFullAccess) {
-                // Strict view: Only tickets assigned to this agent
-                query.assignedTo = req.user.id;
-            }
-            // If hasFullAccess, we don't set any default query restrictions (they see all)
-            // But filters (status, priority etc) below will still apply.
         }
 
         // Additional filters
         if (status) query.status = status;
         if (priority) query.priority = priority;
-        if (assignedTo) query.assignedTo = assignedTo;
+        if (search) {
+            const searchRegex = { $regex: search, $options: 'i' };
+            query.$or = query.$or || [];
+            query.$or.push(
+                { subject: searchRegex },
+                { ticketNumber: searchRegex }
+            );
+        }
+        if (assignedTo) {
+            if (assignedTo === 'unassigned') {
+                query.assignedTo = { $exists: false };
+            } else {
+                query.assignedTo = assignedTo;
+            }
+        }
         if (createdBy) query.createdBy = createdBy;
         if (company) query.company = { $regex: company, $options: 'i' }; // Case insensitive search
+
+        // Pagination
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 20;
+        const skip = (page - 1) * limit;
+
+        const total = await Ticket.countDocuments(query);
+        const pages = Math.ceil(total / limit);
 
         const tickets = await Ticket.find(query)
             .populate('createdBy', 'name email')
             .populate('assignedTo', 'name email')
             .select({ comments: { $slice: -1 } }) // Get only the last comment
             .populate('comments.user', 'name email role') // Populate user details for that comment
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
 
         res.status(200).json({
             status: 'success',
             results: tickets.length,
+            pagination: {
+                total,
+                page,
+                pages,
+                limit
+            },
             data: { tickets }
         });
     } catch (error) {
@@ -131,7 +194,7 @@ export const createTicket = async (req, res) => {
         let creatorId = req.user.id;
 
         // Allow agents/admins/managers to create tickets on behalf of others
-        if (['agent', 'admin', 'super_admin', 'manager'].includes(req.user.role) && req.body.createdBy) {
+        if (['agent', 'admin', 'super_admin', 'company_manager'].includes(req.user.role) && req.body.createdBy) {
             creatorId = req.body.createdBy;
         }
 
@@ -165,9 +228,11 @@ export const createTicket = async (req, res) => {
         const ticketData = {
             ...req.body,
             createdBy: creatorId,
-            status: 'open', // Enforce default status
+            status: 'open',
             companyId: creator.company ? creator.company._id : undefined,
-            company: creator.company ? creator.company.name : ''
+            company: creator.company ? creator.company.name : '',
+            to: req.body.to ? (typeof req.body.to === 'string' ? req.body.to.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : req.body.to.map(e => e.toLowerCase())) : [],
+            cc: req.body.cc ? (typeof req.body.cc === 'string' ? req.body.cc.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) : req.body.cc.map(e => e.toLowerCase())) : []
         };
 
         // Handle attachments
@@ -262,7 +327,7 @@ export const updateTicket = async (req, res) => {
             req.params.id,
             req.body,
             { new: true, runValidators: true }
-        );
+        ).populate('createdBy', 'name email').populate('assignedTo', 'name email');
 
         res.status(200).json({
             status: 'success',
@@ -354,6 +419,14 @@ export const addComment = async (req, res) => {
         }
 
         ticket.comments.push(comment);
+
+        // Update root to/cc with new recipients for visibility scoping
+        if (toEmails.length > 0) {
+            ticket.to = [...new Set([...(ticket.to || []), ...toEmails])];
+        }
+        if (ccEmails.length > 0) {
+            ticket.cc = [...new Set([...(ticket.cc || []), ...ccEmails])];
+        }
 
         // Auto-update status to 'in_progress' if it's 'open' and agent replies
         if (req.user.role !== 'customer' && ticket.status === 'open') {
@@ -510,59 +583,82 @@ export const forwardTicket = async (req, res) => {
 export const getTicketStats = async (req, res) => {
     try {
         let matchStage = {};
+        let adminStats = null;
 
-        // Apply role-based filtering (logic shared with getTickets)
+        // Apply role-based filtering
         if (req.user.role === 'admin' || req.user.role === 'super_admin') {
             const totalUsers = await User.countDocuments({});
             const totalCompanies = await Company.countDocuments({});
             const totalClientCompanies = await Company.countDocuments({ type: 'client-company' });
 
-            return res.status(200).json({
-                status: 'success',
-                data: {
-                    stats: {
-                        adminStats: {
-                            totalUsers,
-                            totalCompanies,
-                            totalClientCompanies
-                        },
-                        // Keep other fields empty/zero as admin doesn't see tickets
-                        total: 0,
-                        status: {},
-                        priority: [],
-                        volume: []
-                    }
-                }
-            });
+            adminStats = {
+                totalUsers,
+                totalCompanies,
+                totalClientCompanies
+            };
+            // matchStage remains empty {} for global stats for admins
         } else if (req.user.role === 'customer') {
             matchStage.createdBy = req.user.id;
-        } else if (req.user.role === 'manager') {
+        } else if (req.user.role === 'company_manager' || req.user.role === 'agent') {
             let allowedCompanyNames = [];
 
             if (req.user.company) {
                 const employerCompany = await Company.findById(req.user.company);
                 if (employerCompany) {
                     allowedCompanyNames.push(employerCompany.name);
+
+                    // 2. If Main Company, include its own Client Companies
+                    if (employerCompany.type === 'main-company') {
+                        const clientCompanies = await Company.find({ parentCompany: employerCompany._id });
+                        const clientNames = clientCompanies.map(c => c.name);
+                        allowedCompanyNames = [...allowedCompanyNames, ...clientNames];
+                    }
                 }
             }
 
-            const createdCompanies = await Company.find({ createdBy: req.user.id });
-            const createdCompanyNames = createdCompanies.map(c => c.name);
-            allowedCompanyNames = [...allowedCompanyNames, ...createdCompanyNames];
+            if (req.user.role === 'company_manager') {
+                const createdCompanies = await Company.find({ createdBy: req.user.id });
+                const createdCompanyNames = createdCompanies.map(c => c.name);
+                allowedCompanyNames = [...new Set([...allowedCompanyNames, ...createdCompanyNames])];
+            }
 
-            if (allowedCompanyNames.length > 0) {
+            let companyMatch = { company: { $in: allowedCompanyNames } };
+
+            if (req.user.role === 'agent') {
+                matchStage.assignedTo = new mongoose.Types.ObjectId(req.user.id);
+            } else if (req.user.role === 'company_manager' && employerCompany && employerCompany.type === 'main-company') {
+                // Main Company Manager: Involvement rule for stats
+                const companyAgents = await User.find({ company: employerCompany._id, role: 'agent' });
+                const agentIds = [new mongoose.Types.ObjectId(req.user.id), ...companyAgents.map(a => new mongoose.Types.ObjectId(a._id))];
+                const agentEmails = [req.user.email.toLowerCase(), ...companyAgents.map(a => a.email.toLowerCase())];
+
+                const employerCompanyName = employerCompany.name;
+                const otherCompanyNames = allowedCompanyNames.filter(c => c !== employerCompanyName);
+
                 matchStage.$or = [
-                    { company: { $in: allowedCompanyNames } },
-                    { createdBy: req.user.id }
+                    { company: employerCompanyName },
+                    {
+                        company: { $in: otherCompanyNames },
+                        $or: [
+                            { createdBy: { $in: agentIds } },
+                            { assignedTo: { $in: agentIds } },
+                            { cc: { $in: [...agentEmails, employerCompanyName] } }
+                        ]
+                    },
+                    { assignedTo: new mongoose.Types.ObjectId(req.user.id) },
+                    { createdBy: new mongoose.Types.ObjectId(req.user.id) }
                 ];
             } else {
-                matchStage.createdBy = req.user.id;
+                // Regular Manager
+                matchStage.$or = [
+                    { company: { $in: allowedCompanyNames } },
+                    { assignedTo: new mongoose.Types.ObjectId(req.user.id) },
+                    { createdBy: new mongoose.Types.ObjectId(req.user.id) }
+                ];
             }
-        } else if (req.user.role === 'agent') {
-            const hasFullAccess = req.user.permissions && req.user.permissions.includes('view_all_tickets');
-            if (!hasFullAccess) {
-                matchStage.assignedTo = req.user.id;
-            }
+            console.log('Stats Match Stage (Staff):', JSON.stringify(matchStage, null, 2));
+        } else {
+            console.log('Stats Match Stage (Other):', JSON.stringify(matchStage, null, 2));
         }
 
         // 1. Get counts by status
@@ -623,7 +719,8 @@ export const getTicketStats = async (req, res) => {
             total: totalTickets,
             status: statusStats.reduce((acc, curr) => ({ ...acc, [curr._id]: curr.count }), {}),
             priority: priorityStats.map(p => ({ name: p._id, value: p.count })),
-            volume: volumeStats.map(v => ({ date: v._id, tickets: v.count }))
+            volume: volumeStats.map(v => ({ date: v._id, tickets: v.count })),
+            adminStats
         };
 
         res.status(200).json({
