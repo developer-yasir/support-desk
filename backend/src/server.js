@@ -20,9 +20,13 @@ const app = express();
 // Connect to database
 connectDB();
 
+// Start Email Polling Service
+import { startEmailPolling } from './services/emailPoller.service.js';
+startEmailPolling();
+
 // Middleware
 app.use(cors({
-  origin: true, // Allow all origins (reflects request origin)
+  origin: process.env.FRONTEND_URL || true,
   credentials: true
 }));
 app.use(express.json());

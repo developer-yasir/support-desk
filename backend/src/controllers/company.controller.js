@@ -17,7 +17,8 @@ export const getCompanies = async (req, res) => {
             const managerFilter = {
                 $or: [
                     { _id: req.user.company },
-                    { createdBy: req.user.id }
+                    { createdBy: req.user.id },
+                    { parentCompany: req.user.company }
                 ]
             };
 
@@ -160,6 +161,25 @@ export const updateCompany = async (req, res) => {
             });
         }
 
+        // Check ownership if not super_admin
+        if (req.user.role === 'company_manager') {
+            const userCompanyId = req.user.company && (req.user.company._id || req.user.company).toString();
+            const parentCompanyId = company.parentCompany && company.parentCompany.toString();
+            const createdById = company.createdBy && company.createdBy.toString();
+            const companyId = company._id.toString();
+
+            const isOwner = (createdById && createdById === req.user.id) ||
+                (userCompanyId && parentCompanyId && parentCompanyId === userCompanyId) ||
+                (userCompanyId && userCompanyId === companyId); // Manager editing their own company
+
+            if (!isOwner) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Not authorized to update this company'
+                });
+            }
+        }
+
         // If domain and industry are provided, mark setup as completed
         const updateData = { ...req.body };
         if (updateData.domain && updateData.industry && !company.setupCompleted) {
@@ -198,20 +218,35 @@ export const deleteCompany = async (req, res) => {
             });
         }
 
-        // Check if company has associated users
-        const hasUsers = await User.exists({ company: req.params.id });
-        if (hasUsers) {
-            return res.status(400).json({
-                status: 'error',
-                message: 'Cannot delete company with associated users. Please reassign or delete the users first.'
-            });
+        // Check ownership if not super_admin
+        if (req.user.role === 'company_manager') {
+            const userCompanyId = req.user.company && (req.user.company._id || req.user.company).toString();
+            const parentCompanyId = company.parentCompany && company.parentCompany.toString();
+            const createdById = company.createdBy && company.createdBy.toString();
+
+            const isOwner = (createdById && createdById === req.user.id) ||
+                (userCompanyId && parentCompanyId && parentCompanyId === userCompanyId);
+
+            if (!isOwner) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Not authorized to delete this company'
+                });
+            }
         }
 
+        // Find and delete all tickets associated with this company
+        await Ticket.deleteMany({ companyId: req.params.id });
+
+        // Find and delete all users associated with this company
+        await User.deleteMany({ company: req.params.id });
+
+        // Delete the company
         await company.deleteOne();
 
         res.status(200).json({
             status: 'success',
-            message: 'Company deleted'
+            message: 'Company and all associated data (users, tickets) deleted'
         });
     } catch (error) {
         res.status(500).json({

@@ -22,11 +22,7 @@ const companySchema = new mongoose.Schema({
     notes: {
         type: String
     },
-    features: {
-        type: Map,
-        of: Boolean,
-        default: {}
-    },
+
     parentCompany: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Company',
@@ -59,16 +55,20 @@ const companySchema = new mongoose.Schema({
         },
         secure: {
             type: Boolean,
-            default: false
+            default: true
         },
         user: {
             type: String,
             trim: true
         },
         pass: {
-            type: String  // Will be encrypted
+            type: String
         },
-
+        // Folders to poll (optional, defaults can be hardcoded in service)
+        folders: {
+            inbox: { type: String, default: 'INBOX' },
+            sent: { type: String, default: '[Gmail]/Sent Mail' } // Default for Gmail
+        }
     },
     notifications: {
         type: Map,
@@ -80,6 +80,10 @@ const companySchema = new mongoose.Schema({
         default: {}
     },
     features: {
+        ticketing: {
+            type: Boolean,
+            default: true
+        },
         emailIntegration: {
             type: Boolean,
             default: false

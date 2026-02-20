@@ -21,8 +21,9 @@ export const getUsers = async (req, res) => {
 
         // If manager, force query to their company and its client companies
         if (req.user.role === 'company_manager') {
-            const userCompany = await Company.findById(req.user.company);
-            let companyIds = [req.user.company];
+            const companyId = req.user.company._id || req.user.company;
+            const userCompany = await Company.findById(companyId);
+            let companyIds = [companyId];
 
             if (userCompany && userCompany.type === 'main-company') {
                 const clientCompanies = await Company.find({ parentCompany: userCompany._id });

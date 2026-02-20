@@ -38,6 +38,15 @@ const seedDB = async () => {
             isActive: true
         });
 
+        await User.create({
+            name: 'Admin',
+            email: 'admin@test.com',
+            password: 'password123',
+            role: 'admin',
+            company: adminCompany._id,
+            isActive: true
+        });
+
         // 3. Create 5 Main Companies
         console.log('🏢 Creating 5 Main Companies...');
         const mainCompanies = [];
@@ -48,7 +57,15 @@ const seedDB = async () => {
                 type: 'main-company',
                 industry: 'Support Services',
                 status: 'active',
-                setupCompleted: true
+                setupCompleted: true,
+                features: {
+                    ticketing: true,
+                    reports: true,
+                    clientCompanies: true, // Enable for managers to see Companies page
+                    emailIntegration: true,
+                    customBranding: false,
+                    apiAccess: false
+                }
             });
             mainCompanies.push(comp);
             console.log(`   ✓ Created Company ${i}`);
@@ -71,9 +88,9 @@ const seedDB = async () => {
             // 5. Create 1 Manager for each company
             await User.create({
                 name: `Manager (Co ${i})`,
-                email: `manager.c${i}@test.com`,
+                email: i === 1 ? 'manager@workdesks.com' : `manager.c${i}@test.com`, // Use standard email for first manager
                 password: 'password123',
-                role: 'manager',
+                role: 'company_manager',
                 company: comp._id,
                 isActive: true
             });
@@ -118,7 +135,7 @@ const seedDB = async () => {
         console.log('\n✅ Database Seeded Successfully!');
         console.log('Total: 6 Companies, 31 Users, 25 Tickets');
         console.log('Try logging in with:');
-        console.log('- Manager: manager.c1@test.com / password123');
+        console.log('- Manager: manager@workdesks.com / password123');
         console.log('- Agent: agent1.c1@test.com / password123');
 
         process.exit(0);

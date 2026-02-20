@@ -5,6 +5,12 @@ const ticketSchema = new mongoose.Schema({
         type: String,
         unique: true
     },
+    messageId: {
+        type: String,
+        unique: true,
+        sparse: true,
+        bg: true // Build index in background
+    },
     subject: {
         type: String,
         required: [true, 'Please provide a subject'],

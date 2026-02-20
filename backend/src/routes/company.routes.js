@@ -18,19 +18,19 @@ router.use(protect);
 
 router.route('/')
     .get(getCompanies)
-    .post(authorize('manager', 'admin', 'super_admin'), createCompany);
+    .post(authorize('company_manager', 'admin', 'super_admin'), createCompany);
 
 router.route('/:id')
     .get(getCompany)
-    .put(authorize('manager', 'admin', 'super_admin'), updateCompany)
-    .delete(authorize('manager', 'admin', 'super_admin'), deleteCompany);
+    .put(authorize('company_manager', 'admin', 'super_admin'), updateCompany)
+    .delete(authorize('company_manager', 'admin', 'super_admin'), deleteCompany);
 
 // Email configuration routes
 router.route('/:id/email-config')
-    .put(authorize('manager', 'admin', 'super_admin'), updateEmailConfig);
+    .put(authorize('company_manager', 'admin', 'super_admin'), updateEmailConfig);
 
 router.route('/:id/test-email')
-    .post(authorize('manager', 'admin', 'super_admin'), testEmail);
+    .post(authorize('company_manager', 'admin', 'super_admin'), testEmail);
 
 // Feature management route
 router.route('/:id/features')

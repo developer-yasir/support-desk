@@ -45,7 +45,10 @@ export const getTickets = async (req, res) => {
 
             // 1. Get Employer Company
             if (req.user.company) {
-                const employerCompany = await Company.findById(req.user.company);
+                // Handle case where company might be populated or just ID
+                const companyId = req.user.company._id || req.user.company;
+                const employerCompany = await Company.findById(companyId);
+
                 if (employerCompany) {
                     allowedCompanyNames.push(employerCompany.name);
 
@@ -54,6 +57,9 @@ export const getTickets = async (req, res) => {
                         const clientCompanies = await Company.find({ parentCompany: employerCompany._id });
                         const clientNames = clientCompanies.map(c => c.name);
                         allowedCompanyNames = [...allowedCompanyNames, ...clientNames];
+
+                        // Keep reference for later use
+                        req.employerCompany = employerCompany;
                     }
                 }
             }
@@ -71,8 +77,9 @@ export const getTickets = async (req, res) => {
             if (req.user.role === 'agent') {
                 // Strict view: Only tickets assigned to this agent
                 query.assignedTo = req.user.id;
-            } else if (req.user.role === 'company_manager' && employerCompany && employerCompany.type === 'main-company') {
+            } else if (req.user.role === 'company_manager' && req.employerCompany && req.employerCompany.type === 'main-company') {
                 // Main Company Manager: Involvement rule for other companies
+                const employerCompany = req.employerCompany;
                 const companyAgents = await User.find({ company: employerCompany._id, role: 'agent' });
                 const agentIds = [req.user.id, ...companyAgents.map(a => a._id)];
                 const agentEmails = [req.user.email.toLowerCase(), ...companyAgents.map(a => a.email.toLowerCase())];
@@ -603,7 +610,10 @@ export const getTicketStats = async (req, res) => {
             let allowedCompanyNames = [];
 
             if (req.user.company) {
-                const employerCompany = await Company.findById(req.user.company);
+                // Handle case where company might be populated or just ID
+                const companyId = req.user.company._id || req.user.company;
+                const employerCompany = await Company.findById(companyId);
+
                 if (employerCompany) {
                     allowedCompanyNames.push(employerCompany.name);
 
@@ -612,6 +622,9 @@ export const getTicketStats = async (req, res) => {
                         const clientCompanies = await Company.find({ parentCompany: employerCompany._id });
                         const clientNames = clientCompanies.map(c => c.name);
                         allowedCompanyNames = [...allowedCompanyNames, ...clientNames];
+
+                        // Keep reference for later use
+                        req.employerCompany = employerCompany;
                     }
                 }
             }
@@ -626,8 +639,9 @@ export const getTicketStats = async (req, res) => {
 
             if (req.user.role === 'agent') {
                 matchStage.assignedTo = new mongoose.Types.ObjectId(req.user.id);
-            } else if (req.user.role === 'company_manager' && employerCompany && employerCompany.type === 'main-company') {
+            } else if (req.user.role === 'company_manager' && req.employerCompany && req.employerCompany.type === 'main-company') {
                 // Main Company Manager: Involvement rule for stats
+                const employerCompany = req.employerCompany;
                 const companyAgents = await User.find({ company: employerCompany._id, role: 'agent' });
                 const agentIds = [new mongoose.Types.ObjectId(req.user.id), ...companyAgents.map(a => new mongoose.Types.ObjectId(a._id))];
                 const agentEmails = [req.user.email.toLowerCase(), ...companyAgents.map(a => a.email.toLowerCase())];

@@ -141,6 +141,10 @@ export const login = async (req, res) => {
         // Check if manager needs to complete company setup
         const needsSetup = user.role === 'company_manager' && user.company && !user.company.setupCompleted;
 
+        // Update last login
+        user.lastLogin = new Date();
+        await user.save();
+
         res.status(200).json({
             status: 'success',
             data: {
@@ -155,9 +159,6 @@ export const login = async (req, res) => {
                 needsSetup
             }
         });
-        // Update last login
-        user.lastLogin = new Date();
-        await user.save();
     } catch (error) {
         res.status(500).json({
             status: 'error',
