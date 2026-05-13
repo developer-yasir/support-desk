@@ -140,7 +140,7 @@ export async function testEmailConfig(emailConfig, testRecipient) {
  * @param {Object} comment - Comment/reply object
  * @returns {string} - HTML email content
  */
-export function generateTicketReplyEmail(ticket, comment) {
+export function generateTicketReplyEmail(ticket, comment, options = {}) {
     const ticketId = ticket?._id?.toString?.() || '';
     const ticketRef = ticket?.ticketNumber || (ticketId ? `#${ticketId.slice(-6)}` : '');
     const subject = ticket?.subject || '(No subject)';
@@ -149,6 +149,55 @@ export function generateTicketReplyEmail(ticket, comment) {
     const messageHtml = (comment?.message ?? comment?.content ?? '').toString().trim() || '(No message content)';
     const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const ticketUrl = `${baseUrl}/tickets/${ticketId}`;
+
+    const historyMode = options.historyMode || 'lastN'; // 'none' | 'lastN' | 'full'
+    const historyCount = Number.isFinite(options.historyCount) ? options.historyCount : 3;
+
+    const formatDateTime = (value) => {
+        try {
+            const d = new Date(value);
+            // eslint-disable-next-line no-restricted-globals
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleString();
+        } catch {
+            return '';
+        }
+    };
+
+    const renderHistory = () => {
+        if (historyMode === 'none') return '';
+
+        const parts = [];
+
+        const opener = (ticket?.description || '').toString().trim();
+        const openerAuthor = ticket?.createdBy?.name || ticket?.createdBy?.email || 'Customer';
+        const openerAt = ticket?.createdAt ? formatDateTime(ticket.createdAt) : '';
+        if (opener) {
+            parts.push(`<p><strong>${openerAuthor}</strong>${openerAt ? ` <span style="color:#666;">(${openerAt})</span>` : ''}</p>`);
+            parts.push(`<div>${opener}</div>`);
+        }
+
+        const comments = Array.isArray(ticket?.comments) ? ticket.comments : [];
+        // Exclude the latest comment (this email is about it)
+        const historyCommentsAll = comments.slice(0, Math.max(0, comments.length - 1)).filter((c) => !c?.isInternal);
+        const historyComments =
+            historyMode === 'full'
+                ? historyCommentsAll
+                : historyCommentsAll.slice(Math.max(0, historyCommentsAll.length - Math.max(1, historyCount)));
+
+        for (const c of historyComments) {
+            const name = c?.user?.name || c?.user?.email || 'Support';
+            const at = c?.createdAt ? formatDateTime(c.createdAt) : '';
+            const body = (c?.message || '').toString().trim();
+            if (!body) continue;
+            parts.push(`<p><strong>${name}</strong>${at ? ` <span style="color:#666;">(${at})</span>` : ''}</p>`);
+            parts.push(`<div>${body}</div>`);
+        }
+
+        if (parts.length === 0) return '';
+        const label = historyMode === 'full' ? 'Previous messages' : `Previous messages (last ${historyComments.length})`;
+        return `<hr /><p style="color:#666;margin:0 0 8px 0;"><strong>${label}</strong></p><blockquote style="margin:0;padding-left:12px;border-left:2px solid #ddd;">${parts.join('')}</blockquote>`;
+    };
 
     // Minimal "normal email" layout (no heavy branding / buttons)
     return `<!doctype html>
@@ -163,6 +212,7 @@ export function generateTicketReplyEmail(ticket, comment) {
     <p><strong>Subject:</strong> ${subject}</p>
     <hr />
     ${messageHtml}
+    ${renderHistory()}
     <hr />
     <p>View ticket: <a href="${ticketUrl}">${ticketUrl}</a></p>
     <p style="color:#666;font-size:12px;">Sent from ${companyName}</p>

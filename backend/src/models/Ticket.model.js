@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import Counter from './Counter.model.js';
 
 const ticketSchema = new mongoose.Schema({
     ticketNumber: {
@@ -94,6 +95,12 @@ const ticketSchema = new mongoose.Schema({
             type: String,
             index: true
         },
+        threadRootMessageId: String,
+        lastSentMessageId: String,
+        notifiedRecipients: {
+            type: [String],
+            default: []
+        },
         from: String,
         to: [String],
         cc: [String],
@@ -110,8 +117,31 @@ ticketSchema.index({ 'email.messageId': 1 }, { unique: true, sparse: true });
 // Auto-generate ticket number
 ticketSchema.pre('save', async function (next) {
     if (!this.ticketNumber) {
-        const count = await mongoose.model('Ticket').countDocuments();
-        this.ticketNumber = `TKT-${String(count + 1).padStart(6, '0')}`;
+        // Use an atomic counter to avoid duplicate ticket numbers under concurrency
+        let counter = await Counter.findOne({ key: 'ticketNumber' });
+
+        // Initialize counter from current max ticket number if missing (safe for existing DBs)
+        if (!counter) {
+            const last = await mongoose
+                .model('Ticket')
+                .findOne({ ticketNumber: /^TKT-\d{6}$/ })
+                .sort({ ticketNumber: -1 })
+                .select('ticketNumber')
+                .lean();
+            const lastSeq = last?.ticketNumber ? Number.parseInt(String(last.ticketNumber).slice(4), 10) : 0;
+            counter = await Counter.findOneAndUpdate(
+                { key: 'ticketNumber' },
+                { $setOnInsert: { seq: Number.isFinite(lastSeq) ? lastSeq : 0 } },
+                { new: true, upsert: true }
+            );
+        }
+
+        const updated = await Counter.findOneAndUpdate(
+            { key: 'ticketNumber' },
+            { $inc: { seq: 1 } },
+            { new: true }
+        );
+        this.ticketNumber = `TKT-${String(updated.seq).padStart(6, '0')}`;
     }
     next();
 });

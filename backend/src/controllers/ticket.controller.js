@@ -517,22 +517,73 @@ export const addComment = async (req, res) => {
 
                 // If still no recipients, don't attempt
                 if ((toSet.size > 0 || ccSet.size > 0) && senderCompany) {
-                    const emailHtml = generateTicketReplyEmail(updatedTicket, {
-                        ...comment,
-                        author: req.user?.name || req.user?.email || 'Support Team'
-                    });
+                    // Recipient segmentation:
+                    // - Existing participants get only the latest message (Gmail thread already contains history).
+                    // - Newly added recipients (first time on this ticket) get full ticket history once.
+                    const normalizeEmail = (val) => String(val || '').trim().toLowerCase();
+                    const allRecipients = [...toSet, ...ccSet].map(normalizeEmail).filter(Boolean);
+                    const alreadyNotified = new Set((ticket?.email?.notifiedRecipients || []).map(normalizeEmail));
+                    const newRecipients = allRecipients.filter((e) => !alreadyNotified.has(e));
+                    const existingRecipients = allRecipients.filter((e) => alreadyNotified.has(e));
+
+                    const emailHtmlLatestOnly = generateTicketReplyEmail(
+                        updatedTicket,
+                        { ...comment, author: req.user?.name || req.user?.email || 'Support Team' },
+                        { historyMode: 'none' }
+                    );
+                    const emailHtmlFullHistory = generateTicketReplyEmail(
+                        updatedTicket,
+                        { ...comment, author: req.user?.name || req.user?.email || 'Support Team' },
+                        { historyMode: 'full' }
+                    );
                     const ticketRef = ticket.ticketNumber || ticket._id.toString().slice(-6);
 
                     try {
-                        await sendEmail(senderCompany, {
-                            to: [...toSet],
-                            cc: [...ccSet],
-                            subject: `Re: ${ticket.subject} [#${ticketRef}]`,
-                            html: emailHtml,
-                            text: `New reply on ticket: ${message}`,
-                            inReplyTo: ticket?.email?.messageId || undefined,
-                            references: ticket?.email?.messageId ? [ticket.email.messageId] : undefined
-                        });
+                        const threading = {
+                            inReplyTo: ticket?.email?.lastSentMessageId || ticket?.email?.threadRootMessageId || ticket?.email?.messageId || undefined,
+                            references: [
+                                ticket?.email?.threadRootMessageId || ticket?.email?.messageId,
+                                ticket?.email?.lastSentMessageId
+                            ].filter(Boolean),
+                            headers: { 'X-WorkDesks-Ticket': ticketRef }
+                        };
+
+                        // Send to existing participants (latest only)
+                        let sendRes = null;
+                        if (existingRecipients.length > 0) {
+                            sendRes = await sendEmail(senderCompany, {
+                                to: existingRecipients,
+                                subject: `Re: ${ticket.subject} [#${ticketRef}]`,
+                                html: emailHtmlLatestOnly,
+                                text: `New reply on ticket: ${message}`,
+                                ...threading
+                            });
+                        }
+
+                        // Send to newly added participants (full history once)
+                        if (newRecipients.length > 0) {
+                            await sendEmail(senderCompany, {
+                                to: newRecipients,
+                                subject: `Re: ${ticket.subject} [#${ticketRef}]`,
+                                html: emailHtmlFullHistory,
+                                text: `New reply on ticket: ${message}`,
+                                ...threading
+                            });
+                        }
+
+                        // Persist threading info so inbound replies can attach using In-Reply-To/References
+                        if (sendRes?.messageId) {
+                            ticket.email = ticket.email || {};
+                            if (!ticket.email.threadRootMessageId && ticket.email.messageId) {
+                                ticket.email.threadRootMessageId = ticket.email.messageId;
+                            }
+                            ticket.email.lastSentMessageId = String(sendRes.messageId).replace(/^<|>$/g, '');
+                        }
+
+                        // Persist notified recipient list
+                        ticket.email = ticket.email || {};
+                        ticket.email.notifiedRecipients = Array.from(new Set([...(ticket.email.notifiedRecipients || []), ...allRecipients]));
+                        await ticket.save();
                     } catch (emailErr) {
                         console.error('Failed to send ticket reply email:', emailErr.message);
                     }

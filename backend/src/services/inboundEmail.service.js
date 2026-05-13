@@ -34,6 +34,13 @@ function extractTicketNumber(subject = '') {
   return match ? match[0] : null;
 }
 
+function normalizeMessageId(value) {
+  const raw = asText(value).trim();
+  if (!raw) return '';
+  // Gmail often uses <...>; store without brackets for easier comparisons
+  return raw.replace(/^<|>$/g, '');
+}
+
 function stripQuotedEmail(text = '') {
   const input = asText(text).replace(/\r\n/g, '\n');
   if (!input.trim()) return '';
@@ -173,7 +180,11 @@ export async function syncInboundEmailForCompany(company) {
       for await (const msg of client.fetch(range, { uid: true, envelope: true, source: true, internalDate: true })) {
         const uid = msg.uid;
         const parsed = await simpleParser(msg.source);
-        const messageId = asText(parsed.messageId || msg.envelope?.messageId || '').trim();
+        const messageId = normalizeMessageId(parsed.messageId || msg.envelope?.messageId || '');
+        const inReplyTo = normalizeMessageId(parsed.inReplyTo || '');
+        const references = (Array.isArray(parsed.references) ? parsed.references : [])
+          .map(normalizeMessageId)
+          .filter(Boolean);
         const fromAddr = parsed.from?.value?.[0]?.address || msg.envelope?.from?.[0]?.address || '';
 
         // Dedupe: if we don't have a messageId, we still advance UID and skip
@@ -201,13 +212,30 @@ export async function syncInboundEmailForCompany(company) {
             const rawBody = rawText || fallbackFromHtml;
             const body = stripQuotedEmail(rawBody) || '(No message content)';
 
-            // If this is a reply that references an existing ticket number, append as a comment instead of creating a new ticket.
+            // Prefer threading by In-Reply-To / References, then fallback to ticket number in subject.
+            const replyIds = [inReplyTo, ...references].filter(Boolean);
+            let existingTicket = null;
+
+            if (replyIds.length > 0) {
+              existingTicket = await Ticket.findOne({
+                companyId: ticketCompany._id,
+                $or: [
+                  { 'email.messageId': { $in: replyIds } },
+                  { 'email.threadRootMessageId': { $in: replyIds } },
+                  { 'email.lastSentMessageId': { $in: replyIds } },
+                  { 'comments.emailMessageId': { $in: replyIds } }
+                ]
+              });
+            }
+
             const ticketNumber = extractTicketNumber(subject);
             if (ticketNumber) {
-              const existingTicket = await Ticket.findOne({
-                ticketNumber,
-                companyId: ticketCompany._id
-              });
+              if (!existingTicket) {
+                existingTicket = await Ticket.findOne({
+                  ticketNumber,
+                  companyId: ticketCompany._id
+                });
+              }
 
               if (existingTicket) {
                 existingTicket.comments.push({
@@ -223,6 +251,9 @@ export async function syncInboundEmailForCompany(company) {
 
                 existingTicket.to = [...new Set([...(existingTicket.to || []), ...(parsed.to?.value || []).map(v => v.address).filter(Boolean)])];
                 existingTicket.cc = [...new Set([...(existingTicket.cc || []), ...(parsed.cc?.value || []).map(v => v.address).filter(Boolean)])];
+                if (!existingTicket.email?.threadRootMessageId && existingTicket.email?.messageId) {
+                  existingTicket.email.threadRootMessageId = normalizeMessageId(existingTicket.email.messageId);
+                }
 
                 await existingTicket.save();
                 synced += 1;
@@ -244,6 +275,7 @@ export async function syncInboundEmailForCompany(company) {
               cc: (parsed.cc?.value || []).map(v => v.address).filter(Boolean),
               email: {
                 messageId,
+                threadRootMessageId: messageId,
                 from: fromAddr,
                 to: (parsed.to?.value || []).map(v => v.address).filter(Boolean),
                 cc: (parsed.cc?.value || []).map(v => v.address).filter(Boolean),

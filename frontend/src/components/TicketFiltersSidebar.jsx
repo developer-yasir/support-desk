@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, X } from "lucide-react";
+import { Check, Search, X } from "lucide-react";
 import { STATUSES, AGENTS } from "../data/mockData";
 
 const DATE_OPTIONS = [
@@ -40,9 +40,39 @@ export default function TicketFiltersSidebar({
   activeFilterCount,
   onClose,
 }) {
+  const stableStringify = (value) => {
+    const seen = new WeakSet();
+    const stringify = (val) => {
+      if (val === null || typeof val !== "object") return JSON.stringify(val);
+      if (seen.has(val)) return "\"[Circular]\"";
+      seen.add(val);
+      if (Array.isArray(val)) return `[${val.map(stringify).join(",")}]`;
+      const keys = Object.keys(val).sort();
+      return `{${keys.map((k) => `${JSON.stringify(k)}:${stringify(val[k])}`).join(",")}}`;
+    };
+    return stringify(value);
+  };
+
+  const [justApplied, setJustApplied] = useState(false);
+  const appliedSnapshotRef = useRef(stableStringify(filters));
+  const filtersKey = useMemo(() => stableStringify(filters), [filters]);
+  const isDirty = filtersKey !== appliedSnapshotRef.current;
+
   const handleChange = (key, value) => {
     onFilterChange({ ...filters, [key]: value });
   };
+
+  const handleApply = () => {
+    onApply?.();
+    appliedSnapshotRef.current = filtersKey;
+    setJustApplied(true);
+  };
+
+  useEffect(() => {
+    if (!justApplied) return;
+    const t = setTimeout(() => setJustApplied(false), 1200);
+    return () => clearTimeout(t);
+  }, [justApplied]);
 
   const removeStatusFilter = (statusToRemove) => {
     const newStatuses = filters.statuses.filter((s) => s !== statusToRemove);
@@ -89,12 +119,55 @@ export default function TicketFiltersSidebar({
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-5">
+          {/* Quick filters */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => {
+                handleChange("agent", "unassigned");
+                handleChange("statuses", ["open", "pending"]);
+              }}
+            >
+              Unassigned
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => handleChange("statuses", ["open", "pending"])}
+            >
+              Unresolved
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => handleChange("priority", "urgent")}
+            >
+              Urgent
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => handleChange("created", "today")}
+            >
+              Today
+            </Button>
+          </div>
+
           {/* Search fields */}
           <div className="space-y-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search fields"
+                placeholder="Search tickets (subject, requester, #TKT-000123)"
                 value={filters.searchFields || ""}
                 onChange={(e) => handleChange("searchFields", e.target.value)}
                 className="pl-9 bg-background"
@@ -298,10 +371,37 @@ export default function TicketFiltersSidebar({
         </div>
       </ScrollArea>
 
-      {/* Apply Button */}
-      <div className="p-4 border-t">
-        <Button onClick={onApply} className="w-full">
-          Apply
+      {/* Footer */}
+      <div className="px-4 pt-3 pb-2 border-t bg-card">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="text-xs text-muted-foreground">
+            Active: <span className="font-medium text-foreground">{activeFilterCount || 0}</span>
+          </div>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onClick={onClearFilters}
+            className="h-auto p-0 text-xs"
+            disabled={!activeFilterCount}
+          >
+            Clear
+          </Button>
+        </div>
+
+        <Button
+          type="button"
+          onClick={handleApply}
+          className="w-full"
+          disabled={!isDirty}
+        >
+          {justApplied ? (
+            <span className="inline-flex items-center gap-2">
+              <Check className="h-4 w-4" /> Applied
+            </span>
+          ) : (
+            "Apply"
+          )}
         </Button>
       </div>
     </div>
