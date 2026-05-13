@@ -50,6 +50,11 @@ const companySchema = new mongoose.Schema({
             type: Boolean,
             default: false
         },
+        provider: {
+            type: String,
+            enum: ['gmail', 'outlook', 'custom'],
+            default: 'custom'
+        },
         host: {
             type: String,
             trim: true
@@ -67,6 +72,45 @@ const companySchema = new mongoose.Schema({
         },
         pass: {
             type: String  // Will be encrypted
+        },
+        from: {
+            type: String,
+            trim: true
+        },
+
+        // Inbound email (IMAP polling)
+        inboundEnabled: {
+            type: Boolean,
+            default: false
+        },
+        imapHost: {
+            type: String,
+            trim: true
+        },
+        imapPort: {
+            type: Number
+        },
+        imapSecure: {
+            type: Boolean,
+            default: true
+        },
+        imapUser: {
+            type: String,
+            trim: true
+        },
+        imapPass: {
+            type: String // Will be encrypted
+        },
+        inboxFolder: {
+            type: String,
+            default: 'INBOX'
+        },
+        lastUid: {
+            type: Number,
+            default: 0
+        },
+        lastInboundSyncAt: {
+            type: Date
         },
 
     },

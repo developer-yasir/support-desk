@@ -10,12 +10,12 @@ router.use(protect);
 // @route   GET /api/users
 // @desc    Get all users
 // @access  Private (Admin/Manager)
-router.get('/', authorize('super_admin', 'admin', 'manager', 'agent'), getUsers);
+router.get('/', authorize('super_admin', 'admin', 'manager', 'company_manager', 'agent'), getUsers);
 
 // @route   POST /api/users
 // @desc    Create new user
 // @access  Private (Admin/Manager)
-router.post('/', authorize('super_admin', 'admin', 'manager', 'agent'), createUser);
+router.post('/', authorize('super_admin', 'admin', 'manager', 'company_manager', 'agent'), createUser);
 
 // @route   GET /api/users/:id
 // @desc    Get single user

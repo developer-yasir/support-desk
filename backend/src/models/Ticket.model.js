@@ -87,9 +87,24 @@ const ticketSchema = new mongoose.Schema({
     resolvedAt: {
         type: Date
     }
+    ,
+    email: {
+        messageId: {
+            type: String,
+            index: true
+        },
+        from: String,
+        to: [String],
+        cc: [String],
+        receivedAt: Date,
+        subject: String
+    }
 }, {
     timestamps: true
 });
+
+// De-dup inbound emails
+ticketSchema.index({ 'email.messageId': 1 }, { unique: true, sparse: true });
 
 // Auto-generate ticket number
 ticketSchema.pre('save', async function (next) {

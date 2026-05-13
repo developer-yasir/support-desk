@@ -80,13 +80,13 @@ export default function Login() {
                   variant="outline"
                   className="w-full text-xs justify-start h-auto py-2"
                   onClick={() => {
-                    setEmail("superadmin@test.com");
-                    setPassword("password123");
+                    setEmail("superadmin@workdesks.com");
+                    setPassword("super123");
                   }}
                 >
                   <div className="flex flex-col items-start hidden sm:flex">
                     <span className="font-semibold">Super Admin</span>
-                    <span className="text-muted-foreground font-normal">superadmin@test.com</span>
+                    <span className="text-muted-foreground font-normal">superadmin@workdesks.com</span>
                   </div>
                   <div className="flex flex-col items-start sm:hidden">
                     <span className="font-semibold">S. Admin</span>
@@ -97,30 +97,13 @@ export default function Login() {
                   variant="outline"
                   className="w-full text-xs justify-start h-auto py-2"
                   onClick={() => {
-                    setEmail("admin@test.com");
-                    setPassword("password123");
-                  }}
-                >
-                  <div className="flex flex-col items-start hidden sm:flex">
-                    <span className="font-semibold">Admin</span>
-                    <span className="text-muted-foreground font-normal">admin@test.com</span>
-                  </div>
-                  <div className="flex flex-col items-start sm:hidden">
-                    <span className="font-semibold">Admin</span>
-                  </div>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full text-xs justify-start h-auto py-2"
-                  onClick={() => {
-                    setEmail("manager.c1@test.com");
-                    setPassword("password123");
+                    setEmail("manager@workdesks.com");
+                    setPassword("manager123");
                   }}
                 >
                   <div className="flex flex-col items-start hidden sm:flex">
                     <span className="font-semibold">Manager</span>
-                    <span className="text-muted-foreground font-normal">manager.c1@test.com</span>
+                    <span className="text-muted-foreground font-normal">manager@workdesks.com</span>
                   </div>
                   <div className="flex flex-col items-start sm:hidden">
                     <span className="font-semibold">Manager</span>
@@ -131,20 +114,37 @@ export default function Login() {
                   variant="outline"
                   className="w-full text-xs justify-start h-auto py-2"
                   onClick={() => {
-                    setEmail("agent1.c1@test.com");
-                    setPassword("password123");
+                    setEmail("agent@workdesks.com");
+                    setPassword("agent123");
                   }}
                 >
                   <div className="flex flex-col items-start hidden sm:flex">
                     <span className="font-semibold">Agent</span>
-                    <span className="text-muted-foreground font-normal">agent1.c1@test.com</span>
+                    <span className="text-muted-foreground font-normal">agent@workdesks.com</span>
                   </div>
                   <div className="flex flex-col items-start sm:hidden">
                     <span className="font-semibold">Agent</span>
+                  </div>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full text-xs justify-start h-auto py-2"
+                  onClick={() => {
+                    setEmail("customer@workdesks.com");
+                    setPassword("customer123");
+                  }}
+                >
+                  <div className="flex flex-col items-start hidden sm:flex">
+                    <span className="font-semibold">Customer</span>
+                    <span className="text-muted-foreground font-normal">customer@workdesks.com</span>
+                  </div>
+                  <div className="flex flex-col items-start sm:hidden">
+                    <span className="font-semibold">Customer</span>
                   </div>
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground mt-2 text-center">Password: password123</p>
+              <p className="text-xs text-muted-foreground mt-2 text-center">Passwords: super123 / manager123 / agent123 / customer123</p>
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4">

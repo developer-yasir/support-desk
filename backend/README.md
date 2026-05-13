@@ -130,6 +130,12 @@ curl -X POST http://localhost:5000/api/auth/login \
   -d '{"email":"superadmin@workdesks.com","password":"super123"}'
 ```
 
+### Demo credentials (after seeding)
+- Super Admin: `superadmin@workdesks.com` / `super123`
+- Manager: `manager@workdesks.com` / `manager123`
+- Agent: `agent@workdesks.com` / `agent123`
+- Customer: `customer@workdesks.com` / `customer123`
+
 ## 📝 Environment Variables
 
 | Variable | Description | Default |
@@ -140,6 +146,10 @@ curl -X POST http://localhost:5000/api/auth/login \
 | JWT_SECRET | Secret key for JWT | - |
 | JWT_EXPIRE | JWT expiration time | 7d |
 | FRONTEND_URL | Frontend URL for CORS | http://localhost:8080 |
+| ENCRYPTION_KEY | Encrypt stored secrets (email passwords) | - |
+| INBOUND_EMAIL_AUTO_SYNC_ENABLED | Enable automatic IMAP inbound sync | false |
+| INBOUND_EMAIL_AUTO_SYNC_INTERVAL_SECONDS | IMAP poll interval (seconds) | 60 |
+| INBOUND_EMAIL_AUTO_SYNC_RUN_ON_START | Run sync on server start | true |
 
 ## 🔧 Development
 
@@ -152,6 +162,22 @@ npm install -D nodemon
 ```bash
 npm run dev
 ```
+
+## 📧 Email (Gmail/Outlook) — Outbound + Inbound
+
+### Outbound (SMTP)
+- Configure per-company SMTP via `PUT /api/companies/:id/email-config` (Manager).
+- For Gmail/Outlook, use an **App Password** (not your normal password).
+
+### Inbound (IMAP → auto-create tickets)
+This project supports inbound email by **polling IMAP** for each **main company** that has inbound enabled.
+- Enable IMAP in the mailbox settings (Gmail requires “Enable IMAP”).
+- Set the company's IMAP fields in `emailConfig` (`imapHost/imapPort/imapUser/imapPass`).
+- Start the worker:
+  - `npm run email:inbound -- --once` (one sync)
+  - `npm run email:inbound` (runs continuously)
+
+Inbound tickets are de-duplicated using the email `Message-ID` header.
 
 ## 📦 Dependencies
 

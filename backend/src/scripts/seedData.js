@@ -64,8 +64,8 @@ const seedData = async () => {
         // Create Super Admin
         const superAdmin = await User.create({
             name: 'Super Admin',
-            email: 'admin@workdesks.com',
-            password: 'admin123',
+            email: 'superadmin@workdesks.com',
+            password: 'super123',
             role: 'super_admin',
         });
         console.log('✅ Created Super Admin');
@@ -104,7 +104,7 @@ const seedData = async () => {
             // Create 1 manager for the main company
             const manager = await User.create({
                 name: `Manager ${i + 1}`,
-                email: generateEmail(`manager${i + 1}`, mainCompanyDomain),
+                email: i === 0 ? 'manager@workdesks.com' : generateEmail(`manager${i + 1}`, mainCompanyDomain),
                 password: 'manager123',
                 role: 'manager',
                 company: mainCompany._id,
@@ -117,7 +117,7 @@ const seedData = async () => {
             for (let j = 0; j < 5; j++) {
                 const agent = await User.create({
                     name: `Agent ${i + 1}-${j + 1}`,
-                    email: generateEmail(`agent${i + 1}.${j + 1}`, mainCompanyDomain),
+                    email: i === 0 && j === 0 ? 'agent@workdesks.com' : generateEmail(`agent${i + 1}.${j + 1}`, mainCompanyDomain),
                     password: 'agent123',
                     role: 'agent',
                     company: mainCompany._id,
@@ -132,8 +132,8 @@ const seedData = async () => {
             for (let k = 0; k < 10; k++) {
                 const contact = await User.create({
                     name: `Contact ${i + 1}-${k + 1}`,
-                    email: generateEmail(`contact${i + 1}.${k + 1}`, mainCompanyDomain),
-                    password: 'contact123',
+                    email: i === 0 && k === 0 ? 'customer@workdesks.com' : generateEmail(`contact${i + 1}.${k + 1}`, mainCompanyDomain),
+                    password: 'customer123',
                     role: 'customer',
                     company: mainCompany._id,
                     jobTitle: 'Customer'
@@ -216,10 +216,10 @@ const seedData = async () => {
 
         console.log('\n🔐 Sample Login Credentials:');
         console.log('═══════════════════════════════════════');
-        console.log('Super Admin:  admin@workdesks.com / admin123');
-        console.log('Manager:      manager1@techcorpsolutions.com / manager123');
-        console.log('Agent:        agent1.1@techcorpsolutions.com / agent123');
-        console.log('Contact:      contact1.1@techcorpsolutions.com / contact123');
+        console.log('Super Admin:  superadmin@workdesks.com / super123');
+        console.log('Manager:      manager@workdesks.com / manager123');
+        console.log('Agent:        agent@workdesks.com / agent123');
+        console.log('Customer:     customer@workdesks.com / customer123');
         console.log('═══════════════════════════════════════');
 
         process.exit(0);

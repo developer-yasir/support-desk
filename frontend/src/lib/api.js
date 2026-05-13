@@ -33,6 +33,9 @@ export const api = {
             return handleResponse(response);
         } catch (error) {
             console.error('Login error:', error);
+            if (error instanceof TypeError) {
+                throw new Error(`Cannot reach API server at ${API_URL}. Start backend on port 5000 and verify VITE_API_URL.`);
+            }
             throw error;
         }
     },
@@ -47,6 +50,9 @@ export const api = {
             return handleResponse(response);
         } catch (error) {
             console.error('Register error:', error);
+            if (error instanceof TypeError) {
+                throw new Error(`Cannot reach API server at ${API_URL}. Start backend on port 5000 and verify VITE_API_URL.`);
+            }
             throw error;
         }
     },
@@ -88,6 +94,19 @@ export const api = {
             return handleResponse(response);
         } catch (error) {
             console.error('Get ticket error:', error);
+            throw error;
+        }
+    },
+
+    deleteTicket: async (id) => {
+        try {
+            const response = await fetch(`${API_URL}/tickets/${id}`, {
+                method: 'DELETE',
+                headers: getHeaders(),
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Delete ticket error:', error);
             throw error;
         }
     },
@@ -247,6 +266,32 @@ export const api = {
             return handleResponse(response);
         } catch (error) {
             console.error('Test email config error:', error);
+            throw error;
+        }
+    },
+
+    testImapConfig: async (id) => {
+        try {
+            const response = await fetch(`${API_URL}/companies/${id}/test-imap`, {
+                method: 'POST',
+                headers: getHeaders()
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Test IMAP config error:', error);
+            throw error;
+        }
+    },
+
+    syncInboundNow: async (id) => {
+        try {
+            const response = await fetch(`${API_URL}/companies/${id}/inbound/sync`, {
+                method: 'POST',
+                headers: getHeaders()
+            });
+            return handleResponse(response);
+        } catch (error) {
+            console.error('Sync inbound error:', error);
             throw error;
         }
     },

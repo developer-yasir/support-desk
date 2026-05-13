@@ -3,6 +3,7 @@ import User from '../models/User.model.js';
 import Ticket from '../models/Ticket.model.js';
 import { encrypt, decrypt } from '../utils/encryption.js';
 import { testEmailConfig } from '../services/email.service.js';
+import { syncInboundEmailForCompany, testImapConnectionForCompany } from '../services/inboundEmail.service.js';
 
 // @desc    Get all companies
 // @route   GET /api/companies
@@ -236,7 +237,7 @@ export const updateEmailConfig = async (req, res) => {
         }
 
         // Check authorization
-        if (req.user.role !== 'superadmin' &&
+        if (req.user.role !== 'super_admin' &&
             req.user.company?.toString() !== req.params.id) {
             return res.status(403).json({
                 status: 'error',
@@ -244,16 +245,42 @@ export const updateEmailConfig = async (req, res) => {
             });
         }
 
-        const { enabled, host, port, secure, user, pass, from, notifications } = req.body;
+        const {
+            enabled,
+            provider,
+            host,
+            port,
+            secure,
+            user,
+            pass,
+            from,
+            inboundEnabled,
+            imapHost,
+            imapPort,
+            imapSecure,
+            imapUser,
+            imapPass,
+            inboxFolder,
+            notifications
+        } = req.body;
 
         // Encrypt password if provided
         const emailConfig = {
             enabled: enabled || false,
+            provider: provider || company.emailConfig?.provider || 'custom',
             host,
             port,
             secure,
             user,
             from,
+            inboundEnabled: inboundEnabled || false,
+            imapHost,
+            imapPort,
+            imapSecure,
+            imapUser,
+            inboxFolder: inboxFolder || company.emailConfig?.inboxFolder || 'INBOX',
+            lastUid: company.emailConfig?.lastUid || 0,
+            lastInboundSyncAt: company.emailConfig?.lastInboundSyncAt,
             notifications: notifications || {}
         };
 
@@ -265,6 +292,12 @@ export const updateEmailConfig = async (req, res) => {
             emailConfig.pass = company.emailConfig.pass;
         }
 
+        if (imapPass) {
+            emailConfig.imapPass = encrypt(imapPass);
+        } else if (company.emailConfig?.imapPass) {
+            emailConfig.imapPass = company.emailConfig.imapPass;
+        }
+
         company.emailConfig = emailConfig;
         await company.save();
 
@@ -273,6 +306,7 @@ export const updateEmailConfig = async (req, res) => {
             ...company.emailConfig.toObject(),
             pass: undefined
         };
+        safeConfig.imapPass = undefined;
 
         res.status(200).json({
             status: 'success',
@@ -301,7 +335,7 @@ export const testEmail = async (req, res) => {
         }
 
         // Check authorization
-        if (req.user.role !== 'superadmin' &&
+        if (req.user.role !== 'super_admin' &&
             req.user.company?.toString() !== req.params.id) {
             return res.status(403).json({
                 status: 'error',
@@ -338,6 +372,78 @@ export const testEmail = async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: error.message
+        });
+    }
+};
+
+// @desc    Test IMAP configuration (inbound)
+// @route   POST /api/companies/:id/test-imap
+// @access  Private (Manager of the company)
+export const testImap = async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+
+        if (!company) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Company not found'
+            });
+        }
+
+        // Check authorization
+        if (req.user.role !== 'super_admin' &&
+            req.user.company?.toString() !== req.params.id) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Not authorized to test this company email'
+            });
+        }
+
+        const result = await testImapConnectionForCompany(company);
+        res.status(200).json({
+            status: 'success',
+            message: result.message
+        });
+    } catch (error) {
+        res.status(400).json({
+            status: 'error',
+            message: `IMAP test failed: ${error.message}`
+        });
+    }
+};
+
+// @desc    Sync inbound emails now (create tickets)
+// @route   POST /api/companies/:id/inbound/sync
+// @access  Private (Manager of the company)
+export const syncInboundNow = async (req, res) => {
+    try {
+        const company = await Company.findById(req.params.id);
+
+        if (!company) {
+            return res.status(404).json({
+                status: 'error',
+                message: 'Company not found'
+            });
+        }
+
+        // Check authorization
+        if (req.user.role !== 'super_admin' &&
+            req.user.company?.toString() !== req.params.id) {
+            return res.status(403).json({
+                status: 'error',
+                message: 'Not authorized to sync this company inbox'
+            });
+        }
+
+        const { synced } = await syncInboundEmailForCompany(company);
+        res.status(200).json({
+            status: 'success',
+            data: { synced }
+        });
+    } catch (error) {
+        res.status(400).json({
+            status: 'error',
+            message: `Inbound sync failed: ${error.message}`
         });
     }
 };

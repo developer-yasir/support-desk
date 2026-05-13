@@ -6,6 +6,6 @@ const router = express.Router();
 
 router.use(protect);
 
-router.get('/dashboard', authorize('manager', 'admin', 'super_admin', 'agent'), getReportData);
+router.get('/dashboard', authorize('manager', 'company_manager', 'admin', 'super_admin', 'agent'), getReportData);
 
 export default router;

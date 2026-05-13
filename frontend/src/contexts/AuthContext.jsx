@@ -3,13 +3,6 @@ import { api } from "../lib/api";
 
 const AuthContext = createContext(null);
 
-// Mock users for demo - Roles: superadmin, company_manager, agent
-const MOCK_USERS = [
-  { id: "1", email: "superadmin@workdesks.com", password: "super123", name: "Super Admin", role: "superadmin", avatar: null },
-  { id: "2", email: "manager@workdesks.com", password: "manager123", name: "Company Manager", role: "company_manager", avatar: null },
-  { id: "3", email: "agent@workdesks.com", password: "agent123", name: "Support Agent", role: "agent", avatar: null },
-];
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);

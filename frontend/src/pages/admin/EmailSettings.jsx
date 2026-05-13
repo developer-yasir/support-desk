@@ -8,6 +8,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select";
+import {
     Dialog,
     DialogContent,
     DialogDescription,
@@ -78,32 +85,93 @@ const EmailSettings = ({ companyData, onUpdate }) => {
     const navigate = useNavigate();
     const [emailConfig, setEmailConfig] = useState({
         enabled: false,
+        provider: "custom",
         host: "",
         port: 587,
         secure: false,
         user: "",
         pass: "",
         from: "",
+        inboundEnabled: false,
+        imapHost: "",
+        imapPort: 993,
+        imapSecure: true,
+        imapUser: "",
+        imapPass: "",
+        inboxFolder: "INBOX",
+        useSameCredentialsForImap: true,
         notifications: {}
     });
     const [testRecipient, setTestRecipient] = useState("");
     const [testingEmail, setTestingEmail] = useState(false);
+    const [testingImap, setTestingImap] = useState(false);
+    const [syncingInbound, setSyncingInbound] = useState(false);
     const [editingNotification, setEditingNotification] = useState(null);
 
     useEffect(() => {
         if (companyData?.emailConfig) {
             setEmailConfig({
                 enabled: companyData.emailConfig.enabled || false,
+                provider: companyData.emailConfig.provider || "custom",
                 host: companyData.emailConfig.host || "",
                 port: companyData.emailConfig.port || 587,
                 secure: companyData.emailConfig.secure || false,
                 user: companyData.emailConfig.user || "",
                 pass: "",
                 from: companyData.emailConfig.from || "",
+                inboundEnabled: companyData.emailConfig.inboundEnabled || false,
+                imapHost: companyData.emailConfig.imapHost || "",
+                imapPort: companyData.emailConfig.imapPort || 993,
+                imapSecure: typeof companyData.emailConfig.imapSecure === "boolean" ? companyData.emailConfig.imapSecure : true,
+                imapUser: companyData.emailConfig.imapUser || "",
+                imapPass: "",
+                inboxFolder: companyData.emailConfig.inboxFolder || "INBOX",
+                useSameCredentialsForImap: true,
                 notifications: companyData.emailConfig.notifications || {}
             });
         }
     }, [companyData]);
+
+    const applyProviderPreset = (provider) => {
+        const presets = {
+            gmail: {
+                host: "smtp.gmail.com",
+                port: 587,
+                secure: false,
+                imapHost: "imap.gmail.com",
+                imapPort: 993,
+                imapSecure: true,
+            },
+            outlook: {
+                host: "smtp.office365.com",
+                port: 587,
+                secure: false,
+                imapHost: "outlook.office365.com",
+                imapPort: 993,
+                imapSecure: true,
+            },
+            custom: {}
+        };
+
+        const preset = presets[provider] || presets.custom;
+        setEmailConfig((prev) => ({
+            ...prev,
+            provider,
+            ...preset,
+        }));
+    };
+
+    const buildPayload = () => {
+        const payload = { ...emailConfig };
+        delete payload.useSameCredentialsForImap;
+
+        if (emailConfig.useSameCredentialsForImap) {
+            payload.imapUser = emailConfig.user;
+            payload.imapPass = emailConfig.pass;
+        }
+
+        return payload;
+    };
 
     const handleNotificationToggle = (id, checked) => {
         setEmailConfig(prev => ({
@@ -151,14 +219,21 @@ const EmailSettings = ({ companyData, onUpdate }) => {
                 }
             }
 
-            const response = await api.updateEmailConfig(companyData._id, emailConfig);
+            if (emailConfig.inboundEnabled && !emailConfig.imapHost) {
+                toast.error("IMAP host is required when inbound email is enabled");
+                return;
+            }
+
+            const response = await api.updateEmailConfig(companyData._id, buildPayload());
             toast.success("Email configuration saved successfully!");
 
             const updatedConfig = response.data.emailConfig;
             setEmailConfig(prev => ({
                 ...prev,
                 ...updatedConfig,
-                pass: ""
+                pass: "",
+                imapPass: "",
+                useSameCredentialsForImap: true
             }));
 
             onUpdate({ ...companyData, emailConfig: response.data.emailConfig });
@@ -182,6 +257,32 @@ const EmailSettings = ({ companyData, onUpdate }) => {
             toast.error(error.message || "Failed to send test email");
         } finally {
             setTestingEmail(false);
+        }
+    };
+
+    const handleTestImap = async () => {
+        if (!companyData?._id) return;
+        setTestingImap(true);
+        try {
+            const res = await api.testImapConfig(companyData._id);
+            toast.success(res.message || "IMAP connected successfully!");
+        } catch (error) {
+            toast.error(error.message || "Failed to connect to IMAP");
+        } finally {
+            setTestingImap(false);
+        }
+    };
+
+    const handleSyncInboundNow = async () => {
+        if (!companyData?._id) return;
+        setSyncingInbound(true);
+        try {
+            const res = await api.syncInboundNow(companyData._id);
+            toast.success(`Inbound sync complete: +${res.data?.synced ?? 0} ticket(s)`);
+        } catch (error) {
+            toast.error(error.message || "Inbound sync failed");
+        } finally {
+            setSyncingInbound(false);
         }
     };
 
@@ -209,9 +310,9 @@ const EmailSettings = ({ companyData, onUpdate }) => {
                     {companyData && (
                         <Card>
                             <CardHeader>
-                                <CardTitle>SMTP Configuration</CardTitle>
+                                <CardTitle>Email Configuration</CardTitle>
                                 <CardDescription>
-                                    Configure your company's email for sending ticket replies
+                                    Configure outbound (SMTP) and inbound (IMAP) so emails can create tickets automatically
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="pt-6 space-y-6">
@@ -224,6 +325,22 @@ const EmailSettings = ({ companyData, onUpdate }) => {
                                 </div>
                                 {emailConfig.enabled && (
                                     <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+                                        <div className="grid gap-6 md:grid-cols-2">
+                                            <div className="space-y-2">
+                                                <Label>Provider</Label>
+                                                <Select value={emailConfig.provider} onValueChange={applyProviderPreset}>
+                                                    <SelectTrigger>
+                                                        <SelectValue placeholder="Select provider" />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="bg-popover z-50">
+                                                        <SelectItem value="gmail">Gmail</SelectItem>
+                                                        <SelectItem value="outlook">Outlook</SelectItem>
+                                                        <SelectItem value="custom">Custom</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <p className="text-xs text-muted-foreground">Gmail/Outlook presets auto-fill server fields.</p>
+                                            </div>
+                                        </div>
                                         <div className="grid gap-6 md:grid-cols-2">
                                             <div className="space-y-2">
                                                 <Label htmlFor="smtpHost">SMTP Host</Label>
@@ -265,6 +382,7 @@ const EmailSettings = ({ companyData, onUpdate }) => {
                                                     value={emailConfig.pass}
                                                     onChange={(e) => setEmailConfig({ ...emailConfig, pass: e.target.value })}
                                                 />
+                                                <p className="text-xs text-muted-foreground">For Gmail/Outlook, use an App Password.</p>
                                             </div>
                                         </div>
                                         <div className="space-y-2">
@@ -283,6 +401,121 @@ const EmailSettings = ({ companyData, onUpdate }) => {
                                                 onCheckedChange={(checked) => setEmailConfig({ ...emailConfig, secure: checked })}
                                             />
                                             <Label htmlFor="secure">Use SSL/TLS</Label>
+                                        </div>
+
+                                        <div className="border-t pt-6 space-y-4">
+                                            <div className="flex items-center justify-between p-4 bg-muted/30 rounded-lg">
+                                                <div>
+                                                    <p className="font-medium">Inbound Email (Auto-create tickets)</p>
+                                                    <p className="text-sm text-muted-foreground">Enable IMAP polling for this mailbox</p>
+                                                </div>
+                                                <Switch
+                                                    checked={emailConfig.inboundEnabled}
+                                                    onCheckedChange={(checked) => setEmailConfig({ ...emailConfig, inboundEnabled: checked })}
+                                                />
+                                            </div>
+
+                                            {emailConfig.inboundEnabled && (
+                                                <div className="space-y-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <Switch
+                                                            id="useSame"
+                                                            checked={emailConfig.useSameCredentialsForImap}
+                                                            onCheckedChange={(checked) => setEmailConfig({ ...emailConfig, useSameCredentialsForImap: checked })}
+                                                        />
+                                                        <Label htmlFor="useSame">Use same credentials as SMTP</Label>
+                                                    </div>
+
+                                                    {!emailConfig.useSameCredentialsForImap && (
+                                                        <div className="grid gap-6 md:grid-cols-2">
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="imapUser">IMAP User</Label>
+                                                                <Input
+                                                                    id="imapUser"
+                                                                    type="email"
+                                                                    placeholder="support@company.com"
+                                                                    value={emailConfig.imapUser}
+                                                                    onChange={(e) => setEmailConfig({ ...emailConfig, imapUser: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <Label htmlFor="imapPass">IMAP Password</Label>
+                                                                <Input
+                                                                    id="imapPass"
+                                                                    type="password"
+                                                                    placeholder="••••••••"
+                                                                    value={emailConfig.imapPass}
+                                                                    onChange={(e) => setEmailConfig({ ...emailConfig, imapPass: e.target.value })}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="grid gap-6 md:grid-cols-3">
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="imapHost">IMAP Host</Label>
+                                                            <Input
+                                                                id="imapHost"
+                                                                placeholder="imap.gmail.com"
+                                                                value={emailConfig.imapHost}
+                                                                onChange={(e) => setEmailConfig({ ...emailConfig, imapHost: e.target.value })}
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="imapPort">IMAP Port</Label>
+                                                            <Input
+                                                                id="imapPort"
+                                                                type="number"
+                                                                placeholder="993"
+                                                                value={emailConfig.imapPort}
+                                                                onChange={(e) => setEmailConfig({ ...emailConfig, imapPort: parseInt(e.target.value) || 993 })}
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-end space-x-2 pb-1">
+                                                            <Switch
+                                                                id="imapSecure"
+                                                                checked={emailConfig.imapSecure}
+                                                                onCheckedChange={(checked) => setEmailConfig({ ...emailConfig, imapSecure: checked })}
+                                                            />
+                                                            <Label htmlFor="imapSecure">Use SSL/TLS</Label>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid gap-6 md:grid-cols-2">
+                                                        <div className="space-y-2">
+                                                            <Label htmlFor="inboxFolder">Inbox Folder</Label>
+                                                            <Input
+                                                                id="inboxFolder"
+                                                                placeholder="INBOX"
+                                                                value={emailConfig.inboxFolder}
+                                                                onChange={(e) => setEmailConfig({ ...emailConfig, inboxFolder: e.target.value })}
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-end gap-2">
+                                                            <Button variant="outline" onClick={handleTestImap} disabled={testingImap}>
+                                                                {testingImap ? (
+                                                                    <>
+                                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                                        Testing...
+                                                                    </>
+                                                                ) : (
+                                                                    "Test IMAP"
+                                                                )}
+                                                            </Button>
+                                                            <Button variant="outline" onClick={handleSyncInboundNow} disabled={syncingInbound}>
+                                                                {syncingInbound ? (
+                                                                    <>
+                                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                                        Syncing...
+                                                                    </>
+                                                                ) : (
+                                                                    "Sync Now"
+                                                                )}
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="border-t pt-6">

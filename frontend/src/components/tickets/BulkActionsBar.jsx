@@ -36,47 +36,35 @@ import {
   Forward,
   Archive,
 } from "lucide-react";
-import { STATUSES, PRIORITIES, AGENTS } from "@/data/mockData";
-import { toast } from "sonner";
+import { STATUSES, PRIORITIES } from "@/data/mockData";
 
 export default function BulkActionsBar({
   selectedCount,
   onClearSelection,
   onBulkAction,
+  agents = [],
 }) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const handleStatusChange = (status) => {
     onBulkAction("changeStatus", { status });
-    toast.success(`Changed status to ${status} for ${selectedCount} ticket(s)`);
   };
 
   const handlePriorityChange = (priority) => {
     onBulkAction("changePriority", { priority });
-    toast.success(`Changed priority to ${priority} for ${selectedCount} ticket(s)`);
   };
 
   const handleAssign = (agentId) => {
-    const agent = AGENTS.find((a) => a.id === agentId);
     onBulkAction("assign", { agentId });
-    toast.success(
-      `Assigned ${selectedCount} ticket(s) to ${agent?.name || "Unassigned"}`
-    );
   };
 
   const handleDelete = () => {
     onBulkAction("delete", {});
-    toast.success(`Deleted ${selectedCount} ticket(s)`);
     setDeleteDialogOpen(false);
   };
 
   const handleMerge = () => {
-    if (selectedCount < 2) {
-      toast.error("Select at least 2 tickets to merge");
-      return;
-    }
     onBulkAction("merge", {});
-    toast.success("Tickets merged successfully");
   };
 
   return (
@@ -131,8 +119,8 @@ export default function BulkActionsBar({
             </SelectTrigger>
             <SelectContent className="bg-popover">
               <SelectItem value="unassigned">Unassigned</SelectItem>
-              {AGENTS.map((agent) => (
-                <SelectItem key={agent.id} value={agent.id}>
+              {agents.map((agent) => (
+                <SelectItem key={agent._id} value={agent._id}>
                   {agent.name}
                 </SelectItem>
               ))}

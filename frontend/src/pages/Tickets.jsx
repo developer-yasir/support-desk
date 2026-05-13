@@ -5,6 +5,14 @@ import { useAuth } from "../contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -36,6 +44,7 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  RefreshCw,
   Bookmark,
   Star,
   Mail,
@@ -204,6 +213,7 @@ export default function Tickets() {
   const [showFilters, setShowFilters] = useState(true);
   const [showSavedViews, setShowSavedViews] = useState(false);
   const [sortBy, setSortBy] = useState("dateCreated");
+  const [layout, setLayout] = useState(() => localStorage.getItem("ticketsLayout") || "card");
   const [filters, setFilters] = useState(() => {
     const saved = localStorage.getItem("ticketFilters");
     return saved ? JSON.parse(saved) : DEFAULT_FILTERS;
@@ -219,9 +229,13 @@ export default function Tickets() {
   useEffect(() => {
     localStorage.setItem("ticketFilters", JSON.stringify(filters));
   }, [filters]);
+
+  useEffect(() => {
+    localStorage.setItem("ticketsLayout", layout);
+  }, [layout]);
   const [activeViewId, setActiveViewId] = useState(null);
 
-  const fetchData = async () => {
+  const fetchData = async (overrides = {}) => {
     try {
       setLoading(true);
 
@@ -231,8 +245,8 @@ export default function Tickets() {
       if (activeTab === "unassigned") assignedToFilter = "unassigned";
 
       const fetchParams = {
-        page: pagination.page,
-        limit: pagination.limit
+        page: overrides.page ?? pagination.page,
+        limit: overrides.limit ?? pagination.limit
       };
 
       if (search) fetchParams.search = search;
@@ -246,7 +260,15 @@ export default function Tickets() {
       ]);
 
       setTickets(ticketsData.data.tickets);
-      setPagination(ticketsData.pagination || { ...pagination, total: ticketsData.results });
+      if (ticketsData.pagination) {
+        setPagination(ticketsData.pagination);
+      } else {
+        const total = ticketsData.results ?? 0;
+        const limit = fetchParams.limit || 20;
+        const page = fetchParams.page || 1;
+        const pages = Math.max(1, Math.ceil(total / limit));
+        setPagination({ total, page, pages, limit });
+      }
       setAgents(agentsData.data.users);
     } catch (error) {
       toast.error("Failed to fetch data: " + error.message);
@@ -289,18 +311,8 @@ export default function Tickets() {
       const searchLower = filters.searchFields.toLowerCase();
       currentTickets = currentTickets.filter(
         (t) =>
-          t.subject.toLowerCase().includes(searchLower) ||
-          t.description.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Search fields filter
-    if (filters.searchFields) {
-      const searchLower = filters.searchFields.toLowerCase();
-      currentTickets = currentTickets.filter(
-        (t) =>
-          t.subject.toLowerCase().includes(searchLower) ||
-          t.description.toLowerCase().includes(searchLower)
+          (t.subject || "").toLowerCase().includes(searchLower) ||
+          (t.description || "").toLowerCase().includes(searchLower)
       );
     }
 
@@ -348,7 +360,7 @@ export default function Tickets() {
     if (selectedTickets.length === filteredTickets.length) {
       setSelectedTickets([]);
     } else {
-      setSelectedTickets(filteredTickets.map((t) => t.id));
+      setSelectedTickets(filteredTickets.map((t) => t._id));
     }
   };
 
@@ -382,15 +394,106 @@ export default function Tickets() {
   const handleExport = () => {
     const ticketsToExport =
       selectedTickets.length > 0
-        ? filteredTickets.filter((t) => selectedTickets.includes(t.id))
+        ? filteredTickets.filter((t) => selectedTickets.includes(t._id))
         : filteredTickets;
     exportTicketsToCsv(ticketsToExport);
     toast.success(`Exported ${ticketsToExport.length} ticket(s) to CSV`);
   };
 
-  const handleBulkAction = (action, params) => {
-    console.log("Bulk action:", action, params, "on tickets:", selectedTickets);
-    setSelectedTickets([]);
+  const handleBulkAction = async (action, params) => {
+    const ticketIds = [...selectedTickets];
+    if (ticketIds.length === 0) return;
+
+    try {
+      if (action === "delete") {
+        const currentPageCount = tickets.length;
+        const results = await Promise.allSettled(ticketIds.map((id) => api.deleteTicket(id)));
+        const deletedIds = ticketIds.filter((_, idx) => results[idx]?.status === "fulfilled");
+        const succeeded = deletedIds.length;
+        const failed = results.length - succeeded;
+
+        if (succeeded > 0) {
+          setTickets((prev) => prev.filter((t) => !deletedIds.includes(t._id)));
+          setPagination((prev) => {
+            const newTotal = Math.max(0, (prev.total || 0) - succeeded);
+            const pages = Math.max(1, Math.ceil(newTotal / (prev.limit || 20)));
+            const page = Math.min(prev.page || 1, pages);
+            return { ...prev, total: newTotal, pages, page };
+          });
+          toast.success(`Deleted ${succeeded} ticket(s)`);
+
+          // If we deleted everything on the current page but there are still tickets overall,
+          // re-fetch so the next page items fill in (otherwise UI shows "No tickets found").
+          const remainingOnPage = currentPageCount - succeeded;
+          if (remainingOnPage <= 0) {
+            const newTotal = Math.max(0, (pagination.total || 0) - succeeded);
+            if (newTotal > 0) {
+              const pages = Math.max(1, Math.ceil(newTotal / (pagination.limit || 20)));
+              const targetPage = Math.min(pagination.page || 1, pages);
+              if (targetPage !== (pagination.page || 1)) {
+                setPagination((prev) => ({ ...prev, page: targetPage }));
+              }
+              await fetchData({ page: targetPage });
+            }
+          }
+        }
+        if (failed > 0) {
+          toast.error(`Failed to delete ${failed} ticket(s)`);
+        }
+      } else if (action === "changeStatus") {
+        const status = params?.status;
+        if (!status) return;
+
+        const results = await Promise.allSettled(ticketIds.map((id) => api.updateTicket(id, { status })));
+        const succeeded = results.filter((r) => r.status === "fulfilled");
+        const failed = results.length - succeeded.length;
+
+        if (succeeded.length > 0) {
+          const byId = new Map(succeeded.map((r) => [r.value?.data?.ticket?._id, r.value?.data?.ticket]));
+          setTickets((prev) => prev.map((t) => byId.get(t._id) || t));
+          const label = STATUSES.find((s) => s.id === status)?.label || status;
+          toast.success(`Updated ${succeeded.length} ticket(s) to "${label}"`);
+        }
+        if (failed > 0) toast.error(`Failed to update ${failed} ticket(s)`);
+      } else if (action === "changePriority") {
+        const priority = params?.priority;
+        if (!priority) return;
+
+        const results = await Promise.allSettled(ticketIds.map((id) => api.updateTicket(id, { priority })));
+        const succeeded = results.filter((r) => r.status === "fulfilled");
+        const failed = results.length - succeeded.length;
+
+        if (succeeded.length > 0) {
+          const byId = new Map(succeeded.map((r) => [r.value?.data?.ticket?._id, r.value?.data?.ticket]));
+          setTickets((prev) => prev.map((t) => byId.get(t._id) || t));
+          const label = PRIORITIES.find((p) => p.id === priority)?.label || priority;
+          toast.success(`Updated ${succeeded.length} ticket(s) to "${label}"`);
+        }
+        if (failed > 0) toast.error(`Failed to update ${failed} ticket(s)`);
+      } else if (action === "assign") {
+        const agentId = params?.agentId;
+        const assignedTo = agentId === "unassigned" ? null : agentId;
+
+        const results = await Promise.allSettled(ticketIds.map((id) => api.updateTicket(id, { assignedTo })));
+        const succeeded = results.filter((r) => r.status === "fulfilled");
+        const failed = results.length - succeeded.length;
+
+        if (succeeded.length > 0) {
+          const byId = new Map(succeeded.map((r) => [r.value?.data?.ticket?._id, r.value?.data?.ticket]));
+          setTickets((prev) => prev.map((t) => byId.get(t._id) || t));
+          const name = assignedTo ? agents.find((a) => a._id === assignedTo)?.name : "Unassigned";
+          toast.success(`Assigned ${succeeded.length} ticket(s) to "${name || "Unknown"}"`);
+        }
+        if (failed > 0) toast.error(`Failed to assign ${failed} ticket(s)`);
+      } else {
+        toast.info("This bulk action is not implemented yet.");
+      }
+    } catch (error) {
+      console.error("Bulk action failed:", error);
+      toast.error(error.message || "Bulk action failed");
+    } finally {
+      setSelectedTickets([]);
+    }
   };
 
   const handleTicketQuickUpdate = async (ticketId, field, value) => {
@@ -450,6 +553,15 @@ export default function Tickets() {
             </TabsList>
           </Tabs>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => fetchData()}
+              title="Refresh tickets"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
             <Button asChild size="sm">
               <Link to="/tickets/new">
                 <Plus className="mr-1 md:mr-2 h-4 w-4" />
@@ -493,9 +605,9 @@ export default function Tickets() {
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
-            <div className="hidden lg:flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Layout:</span>
-              <Select defaultValue="card">
+            <div className="hidden sm:flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground hidden md:inline">Layout:</span>
+              <Select value={layout} onValueChange={setLayout}>
                 <SelectTrigger className="w-20 h-8 border-0 bg-transparent p-0 font-medium">
                   <SelectValue />
                 </SelectTrigger>
@@ -558,6 +670,7 @@ export default function Tickets() {
             selectedCount={selectedTickets.length}
             onClearSelection={() => setSelectedTickets([])}
             onBulkAction={handleBulkAction}
+            agents={agents}
           />
         )}
 
@@ -571,9 +684,98 @@ export default function Tickets() {
               </div>
             ) : (
               <div>
-                {filteredTickets.map((ticket, index) => {
-
-                  return (
+                {layout === "table" ? (
+                  <div className="px-4 md:px-6 py-4">
+                    <Table className="min-w-[900px]">
+                      <TableHeader className="bg-muted/30">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="w-12">
+                            <Checkbox
+                              checked={
+                                filteredTickets.length > 0 &&
+                                selectedTickets.length === filteredTickets.length
+                              }
+                              onCheckedChange={toggleSelectAll}
+                            />
+                          </TableHead>
+                          <TableHead className="min-w-[320px]">Ticket</TableHead>
+                          <TableHead className="w-[150px]">Status</TableHead>
+                          <TableHead className="w-[150px]">Priority</TableHead>
+                          <TableHead className="hidden lg:table-cell w-[180px]">Assignee</TableHead>
+                          <TableHead className="hidden md:table-cell w-[160px]">Updated</TableHead>
+                          <TableHead className="text-right w-[110px]">Open</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredTickets.map((ticket) => (
+                          <TableRow key={ticket._id} className="group">
+                            <TableCell className="align-top">
+                              <Checkbox
+                                checked={selectedTickets.includes(ticket._id)}
+                                onCheckedChange={() => toggleSelect(ticket._id)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            </TableCell>
+                            <TableCell className="align-top">
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={`mt-0.5 h-8 w-8 rounded-full ${getAvatarColor(ticket.createdBy?.name || "User")} flex items-center justify-center flex-shrink-0 text-white font-medium text-sm`}
+                                >
+                                  {(ticket.createdBy?.name || "User").charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <Link
+                                    to={`/tickets/${ticket._id}`}
+                                    className="font-medium leading-5 hover:underline block truncate max-w-[520px]"
+                                  >
+                                    {ticket.subject}
+                                  </Link>
+                                  <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-2">
+                                    <span className="truncate max-w-[220px]">
+                                      {(ticket.createdBy?.name || "Unknown")}{ticket.company ? ` • ${ticket.company}` : ""}
+                                    </span>
+                                    {ticket.ticketNumber && <span>• #{ticket.ticketNumber}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="align-top">
+                              <StatusDropdown
+                                status={ticket.status}
+                                ticketId={ticket._id}
+                                onUpdate={handleTicketQuickUpdate}
+                              />
+                            </TableCell>
+                            <TableCell className="align-top">
+                              <PriorityDropdown
+                                priority={ticket.priority}
+                                ticketId={ticket._id}
+                                onUpdate={handleTicketQuickUpdate}
+                              />
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell align-top">
+                              <AgentDropdown
+                                ticketId={ticket._id}
+                                agentId={ticket.assignedTo?._id || ticket.assignedTo}
+                                onUpdate={handleTicketQuickUpdate}
+                                agents={agents}
+                              />
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell align-top text-muted-foreground text-sm">
+                              {ticket.updatedAt ? formatDistanceToNow(new Date(ticket.updatedAt), { addSuffix: true }) : "—"}
+                            </TableCell>
+                            <TableCell className="align-top text-right">
+                              <Button asChild variant="outline" size="sm" className="h-8 px-3">
+                                <Link to={`/tickets/${ticket._id}`}>View</Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  filteredTickets.map((ticket) => (
                     <div
                       key={ticket._id}
                       className="flex items-start gap-2 sm:gap-4 px-4 md:px-6 py-3 md:py-4 border-b hover:bg-accent/30 transition-colors group"
@@ -684,8 +886,8 @@ export default function Tickets() {
                         <StatusDropdown status={ticket.status} ticketId={ticket._id} onUpdate={handleTicketQuickUpdate} />
                       </div>
                     </div>
-                  );
-                })}
+                  ))
+                )}
               </div>
             )}
           </div>

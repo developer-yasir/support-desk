@@ -16,7 +16,10 @@ export function encrypt(text) {
     try {
         const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
         if (!ENCRYPTION_KEY) {
-            throw new Error('ENCRYPTION_KEY not found in environment variables');
+            // Dev-friendly fallback: store plaintext when no key is provided.
+            // This avoids breaking local setups, but you should set ENCRYPTION_KEY in production.
+            console.warn('⚠️  ENCRYPTION_KEY is not set; storing sensitive values in plaintext.');
+            return text;
         }
 
         const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
@@ -42,14 +45,16 @@ export function decrypt(text) {
     if (!text) return '';
 
     try {
-        const parts = text.split(':');
-        if (parts.length !== 2) {
-            throw new Error('Invalid encrypted format');
-        }
-
         const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
         if (!ENCRYPTION_KEY) {
-            throw new Error('ENCRYPTION_KEY not found in environment variables');
+            // If we never encrypted (plaintext fallback), just return as-is.
+            return text;
+        }
+
+        const parts = text.split(':');
+        if (parts.length !== 2) {
+            // Not encrypted (plaintext)
+            return text;
         }
 
         const key = Buffer.from(ENCRYPTION_KEY.slice(0, 64), 'hex');
