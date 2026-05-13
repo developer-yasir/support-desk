@@ -66,6 +66,13 @@
 - **Secure Configuration**: SMTP credentials encrypted using AES-256 for maximum security.
 - **Testing**: Built-in tools for admins to test SMTP channels.
 
+### 📨 Inbound Email → Tickets (IMAP)
+- **Manual Sync**: Admins can click **Sync Now** (Email Settings) to fetch inbound emails and create tickets.
+- **Auto Sync (Polling)**: Inbound email auto-sync is supported via:
+  - API background job (`INBOUND_EMAIL_AUTO_SYNC_ENABLED=true`), or
+  - Dedicated worker: `cd backend && npm run email:inbound` (recommended for production).
+- **De-duplication**: Uses email `Message-ID` to avoid creating duplicate tickets.
+
 ---
 
 ## 🏗️ System Architecture

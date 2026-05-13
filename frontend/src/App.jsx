@@ -94,7 +94,7 @@ const App = () => (
         <FeaturesProvider>
           <TooltipProvider>
             <Toaster />
-            <Sonner />
+            <Sonner position="top-center" />
             <AppContent />
           </TooltipProvider>
         </FeaturesProvider>

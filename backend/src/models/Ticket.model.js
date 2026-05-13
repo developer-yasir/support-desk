@@ -65,6 +65,7 @@ const ticketSchema = new mongoose.Schema({
             ref: 'User'
         },
         message: String,
+        emailMessageId: String,
         to: [String], // Array of email addresses
         cc: [String], // Array of email addresses
         isInternal: {

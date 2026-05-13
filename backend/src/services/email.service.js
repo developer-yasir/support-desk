@@ -21,7 +21,7 @@ function getDefaultConfig() {
  * @param {Object} options - Email options { to, subject, html, text }
  * @returns {Promise<Object>} - Nodemailer send result
  */
-export async function sendEmail(company, { to, subject, html, text }) {
+export async function sendEmail(company, { to, cc, bcc, replyTo, subject, html, text, inReplyTo, references, headers }) {
     try {
         // Determine which email config to use
         const useCompanyEmail = company?.emailConfig?.enabled &&
@@ -64,9 +64,15 @@ export async function sendEmail(company, { to, subject, html, text }) {
         const result = await transporter.sendMail({
             from: config.from,
             to,
+            cc,
+            bcc,
+            replyTo,
             subject,
             html,
-            text
+            text,
+            inReplyTo,
+            references,
+            headers
         });
 
         console.log('Email sent successfully:', result.messageId);
@@ -135,48 +141,33 @@ export async function testEmailConfig(emailConfig, testRecipient) {
  * @returns {string} - HTML email content
  */
 export function generateTicketReplyEmail(ticket, comment) {
-    return `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background: #4F46E5; color: white; padding: 20px; border-radius: 5px 5px 0 0; }
-                .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
-                .reply { background: white; padding: 15px; margin: 15px 0; border-left: 4px solid #4F46E5; }
-                .footer { background: #f1f1f1; padding: 15px; text-align: center; font-size: 12px; color: #666; }
-                .button { display: inline-block; padding: 10px 20px; background: #4F46E5; color: white; text-decoration: none; border-radius: 5px; margin: 10px 0; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h2>New Reply on Your Support Ticket</h2>
-                </div>
-                <div class="content">
-                    <p><strong>Ticket #${ticket._id?.toString().slice(-6)}</strong></p>
-                    <p><strong>Subject:</strong> ${ticket.subject}</p>
-                    
-                    <div class="reply">
-                        <p><strong>${comment.user?.name || 'Support Team'}</strong> replied:</p>
-                        <p>${comment.content}</p>
-                    </div>
-                    
-                    <p>
-                        <a href="${process.env.FRONTEND_URL}/tickets/${ticket._id}" class="button">
-                            View Ticket
-                        </a>
-                    </p>
-                </div>
-                <div class="footer">
-                    <p>This is an automated message from ${ticket.company?.name || 'Support Desk'}.</p>
-                    <p>Please do not reply to this email directly.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-    `;
+    const ticketId = ticket?._id?.toString?.() || '';
+    const ticketRef = ticket?.ticketNumber || (ticketId ? `#${ticketId.slice(-6)}` : '');
+    const subject = ticket?.subject || '(No subject)';
+    const companyName = ticket?.company || ticket?.company?.name || 'Support Desk';
+    const authorName = comment?.user?.name || comment?.author || 'Support Team';
+    const messageHtml = (comment?.message ?? comment?.content ?? '').toString().trim() || '(No message content)';
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const ticketUrl = `${baseUrl}/tickets/${ticketId}`;
+
+    // Minimal "normal email" layout (no heavy branding / buttons)
+    return `<!doctype html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Re: ${subject}</title>
+  </head>
+  <body>
+    <p><strong>${authorName}</strong> replied on ticket <strong>${ticketRef}</strong></p>
+    <p><strong>Subject:</strong> ${subject}</p>
+    <hr />
+    ${messageHtml}
+    <hr />
+    <p>View ticket: <a href="${ticketUrl}">${ticketUrl}</a></p>
+    <p style="color:#666;font-size:12px;">Sent from ${companyName}</p>
+  </body>
+</html>`;
 }
 
 /**

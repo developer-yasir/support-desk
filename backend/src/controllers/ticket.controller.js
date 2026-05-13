@@ -378,8 +378,45 @@ export const addComment = async (req, res) => {
         const toEmails = parseRecipients(to);
         const ccEmails = parseRecipients(cc);
 
+        const parseBool = (val, defaultValue = false) => {
+            if (val == null) return defaultValue;
+            if (typeof val === 'boolean') return val;
+            const normalized = String(val).trim().toLowerCase();
+            if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+            if (['0', 'false', 'no', 'n', 'off', ''].includes(normalized)) return false;
+            return defaultValue;
+        };
+
+        // FormData sends booleans as strings, normalize to actual boolean
+        const internalFlag = parseBool(isInternal, false);
+
+        // If agent replies without explicitly setting To/Cc, default to the inbound email participants
+        // so replies behave like a normal email thread.
+        const isAgentReply = req.user.role !== 'customer';
+        if (isAgentReply && toEmails.length === 0) {
+            const inboundFrom = ticket?.email?.from;
+            if (inboundFrom) {
+                toEmails.push(inboundFrom);
+            }
+        }
+        if (isAgentReply && ccEmails.length === 0) {
+            const inboundCc = Array.isArray(ticket?.email?.cc) ? ticket.email.cc : [];
+            // Optionally include original "to" recipients (excluding the support mailbox) as CC
+            const inboundTo = Array.isArray(ticket?.email?.to) ? ticket.email.to : [];
+            const extraCc = [...inboundCc, ...inboundTo]
+                .filter(Boolean)
+                .map(e => String(e).trim().toLowerCase())
+                .filter(e => e.includes('@'));
+            ccEmails.push(...extraCc);
+        }
+
+        // Normalize + de-dupe
+        const normalizeList = (list) => [...new Set((list || []).map(e => String(e).trim().toLowerCase()).filter(Boolean))];
+        const normalizedTo = normalizeList(toEmails);
+        const normalizedCc = normalizeList(ccEmails).filter(e => !normalizedTo.includes(e));
+
         // Auto-create users for new emails
-        const allRecipients = [...new Set([...toEmails, ...ccEmails])];
+        const allRecipients = [...new Set([...normalizedTo, ...normalizedCc])];
 
         for (const email of allRecipients) {
             if (!email || !email.includes('@')) continue;
@@ -403,9 +440,9 @@ export const addComment = async (req, res) => {
         const comment = {
             user: req.user.id,
             message,
-            isInternal: isInternal || false,
-            to: toEmails,
-            cc: ccEmails,
+            isInternal: internalFlag,
+            to: normalizedTo,
+            cc: normalizedCc,
             createdAt: Date.now(),
             attachments: []
         };
@@ -421,11 +458,11 @@ export const addComment = async (req, res) => {
         ticket.comments.push(comment);
 
         // Update root to/cc with new recipients for visibility scoping
-        if (toEmails.length > 0) {
-            ticket.to = [...new Set([...(ticket.to || []), ...toEmails])];
+        if (normalizedTo.length > 0) {
+            ticket.to = [...new Set([...(ticket.to || []), ...normalizedTo])];
         }
-        if (ccEmails.length > 0) {
-            ticket.cc = [...new Set([...(ticket.cc || []), ...ccEmails])];
+        if (normalizedCc.length > 0) {
+            ticket.cc = [...new Set([...(ticket.cc || []), ...normalizedCc])];
         }
 
         // Auto-update status to 'in_progress' if it's 'open' and agent replies
@@ -448,44 +485,56 @@ export const addComment = async (req, res) => {
         // Send Email Notification
         try {
             // Only send if the reply is NOT internal
-            if (!isInternal) {
+            if (!internalFlag) {
                 // Get sender's company for email config
                 let senderCompany = null;
                 if (req.user.company) {
                     senderCompany = await Company.findById(req.user.company);
+                } else if (ticket.companyId) {
+                    senderCompany = await Company.findById(ticket.companyId);
                 }
 
                 // Determine recipients
-                const recipients = new Set([...toEmails, ...ccEmails]);
+                const senderEmail = String(req.user.email || '').trim().toLowerCase();
+                const toSet = new Set(normalizedTo);
+                const ccSet = new Set(normalizedCc);
 
-                // If the creator didn't send the comment, notify them
+                // If the creator didn't send the comment, ensure they are included
                 if (ticket.createdBy && ticket.createdBy.toString() !== req.user.id) {
-                    // Fetch creator email if not populated
                     const creator = await User.findById(ticket.createdBy);
-                    if (creator && creator.email) {
-                        recipients.add(creator.email);
+                    if (creator?.email) {
+                        const creatorEmail = String(creator.email).trim().toLowerCase();
+                        if (!toSet.size) toSet.add(creatorEmail);
+                        else ccSet.add(creatorEmail);
                     }
                 }
 
-                // Remove the sender from recipients (don't email yourself)
-                recipients.delete(req.user.email);
+                // Don't email the sender
+                if (senderEmail) {
+                    toSet.delete(senderEmail);
+                    ccSet.delete(senderEmail);
+                }
 
-                if (recipients.size > 0 && senderCompany) {
-                    const emailHtml = generateTicketReplyEmail(updatedTicket, comment);
+                // If still no recipients, don't attempt
+                if ((toSet.size > 0 || ccSet.size > 0) && senderCompany) {
+                    const emailHtml = generateTicketReplyEmail(updatedTicket, {
+                        ...comment,
+                        author: req.user?.name || req.user?.email || 'Support Team'
+                    });
+                    const ticketRef = ticket.ticketNumber || ticket._id.toString().slice(-6);
 
-                    // Send to each recipient
-                    for (const recipient of recipients) {
-                        try {
-                            await sendEmail(senderCompany, {
-                                to: recipient,
-                                subject: `Re: ${ticket.subject} [#${ticket.ticketNumber || ticket._id.toString().slice(-6)}]`,
-                                html: emailHtml,
-                                text: `New reply on ticket: ${message}`
-                            });
-                        } catch (emailErr) {
-                            console.error(`Failed to send email to ${recipient}:`, emailErr.message);
-                            // Don't fail the request if email fails, just log it
-                        }
+                    try {
+                        await sendEmail(senderCompany, {
+                            to: [...toSet],
+                            cc: [...ccSet],
+                            subject: `Re: ${ticket.subject} [#${ticketRef}]`,
+                            html: emailHtml,
+                            text: `New reply on ticket: ${message}`,
+                            inReplyTo: ticket?.email?.messageId || undefined,
+                            references: ticket?.email?.messageId ? [ticket.email.messageId] : undefined
+                        });
+                    } catch (emailErr) {
+                        console.error('Failed to send ticket reply email:', emailErr.message);
                     }
                 }
             }

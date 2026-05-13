@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { api } from "../lib/api";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
@@ -235,7 +235,7 @@ export default function Tickets() {
   }, [layout]);
   const [activeViewId, setActiveViewId] = useState(null);
 
-  const fetchData = async (overrides = {}) => {
+  const fetchData = useCallback(async (overrides = {}) => {
     try {
       setLoading(true);
 
@@ -275,7 +275,17 @@ export default function Tickets() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, filters, pagination.page, pagination.limit, search, user?.id]);
+
+  // Auto-refresh tickets list (helps pull in newly-synced inbound emails without manual refresh)
+  useEffect(() => {
+    const intervalSeconds = 30;
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      fetchData();
+    }, intervalSeconds * 1000);
+    return () => clearInterval(id);
+  }, [fetchData]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

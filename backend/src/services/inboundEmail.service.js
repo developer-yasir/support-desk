@@ -29,6 +29,71 @@ function getProviderDefaults(provider) {
   return {};
 }
 
+function extractTicketNumber(subject = '') {
+  const match = String(subject).toUpperCase().match(/\bTKT-\d{6}\b/);
+  return match ? match[0] : null;
+}
+
+function stripQuotedEmail(text = '') {
+  const input = asText(text).replace(/\r\n/g, '\n');
+  if (!input.trim()) return '';
+
+  const lines = input.split('\n');
+  const stopPatterns = [
+    /^On .+ wrote:\s*$/i,
+    /^From:\s.+$/i,
+    /^Sent:\s.+$/i,
+    /^To:\s.+$/i,
+    /^Subject:\s.+$/i,
+    /^-{2,}\s*Original Message\s*-{2,}$/i,
+    /^_{2,}\s*$/i
+  ];
+
+  const result = [];
+  for (const line of lines) {
+    if (stopPatterns.some((re) => re.test(line.trim()))) break;
+    // Common reply quoting in plain text
+    if (/^\s*>+/.test(line)) break;
+    result.push(line);
+  }
+
+  const cleaned = result.join('\n').trim();
+  return cleaned || input.trim();
+}
+
+function htmlToPlainText(html = '') {
+  const input = asText(html);
+  if (!input.trim()) return '';
+
+  // Remove scripts/styles
+  let text = input
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '');
+
+  // Convert common block/line-break tags to newlines
+  text = text
+    .replace(/<\/(p|div|tr|table|blockquote)>/gi, '\n')
+    .replace(/<(br|br\/|\/br)\s*>/gi, '\n')
+    .replace(/<(li)\b[^>]*>/gi, '• ')
+    .replace(/<\/li>/gi, '\n');
+
+  // Strip remaining tags
+  text = text.replace(/<[^>]+>/g, '');
+
+  // Decode a few common entities
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'");
+
+  // Normalize whitespace
+  text = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+}
+
 async function ensureCustomer({ email, name, companyId }) {
   const existing = await User.findOne({ email });
   if (existing) return existing;
@@ -114,7 +179,13 @@ export async function syncInboundEmailForCompany(company) {
         // Dedupe: if we don't have a messageId, we still advance UID and skip
         if (messageId) {
           const exists = await Ticket.exists({ 'email.messageId': messageId });
+          const existsAsComment = await Ticket.exists({ 'comments.emailMessageId': messageId });
           if (!exists) {
+            if (existsAsComment) {
+              company.emailConfig.lastUid = Math.max(company.emailConfig.lastUid || 0, uid);
+              continue;
+            }
+
             const clientCompany = await resolveCompanyForSender({ mainCompanyId: company._id, senderEmail: fromAddr });
             const ticketCompany = clientCompany || company;
 
@@ -125,7 +196,40 @@ export async function syncInboundEmailForCompany(company) {
             });
 
             const subject = asText(parsed.subject || '(No subject)').slice(0, 250);
-            const body = asText(parsed.text || parsed.html || '').trim() || '(No message content)';
+            const rawText = asText(parsed.text || '').trim();
+            const fallbackFromHtml = !rawText ? htmlToPlainText(parsed.html || '') : '';
+            const rawBody = rawText || fallbackFromHtml;
+            const body = stripQuotedEmail(rawBody) || '(No message content)';
+
+            // If this is a reply that references an existing ticket number, append as a comment instead of creating a new ticket.
+            const ticketNumber = extractTicketNumber(subject);
+            if (ticketNumber) {
+              const existingTicket = await Ticket.findOne({
+                ticketNumber,
+                companyId: ticketCompany._id
+              });
+
+              if (existingTicket) {
+                existingTicket.comments.push({
+                  user: creator._id,
+                  message: body,
+                  emailMessageId: messageId,
+                  to: (parsed.to?.value || []).map(v => v.address).filter(Boolean),
+                  cc: (parsed.cc?.value || []).map(v => v.address).filter(Boolean),
+                  isInternal: false,
+                  createdAt: msg.internalDate || parsed.date || new Date(),
+                  attachments: []
+                });
+
+                existingTicket.to = [...new Set([...(existingTicket.to || []), ...(parsed.to?.value || []).map(v => v.address).filter(Boolean)])];
+                existingTicket.cc = [...new Set([...(existingTicket.cc || []), ...(parsed.cc?.value || []).map(v => v.address).filter(Boolean)])];
+
+                await existingTicket.save();
+                synced += 1;
+                company.emailConfig.lastUid = Math.max(company.emailConfig.lastUid || 0, uid);
+                continue;
+              }
+            }
 
             await Ticket.create({
               subject,
@@ -135,6 +239,9 @@ export async function syncInboundEmailForCompany(company) {
               createdBy: creator._id,
               company: ticketCompany.name,
               companyId: ticketCompany._id,
+              // Store original recipients for later replies/visibility
+              to: (parsed.to?.value || []).map(v => v.address).filter(Boolean),
+              cc: (parsed.cc?.value || []).map(v => v.address).filter(Boolean),
               email: {
                 messageId,
                 from: fromAddr,
