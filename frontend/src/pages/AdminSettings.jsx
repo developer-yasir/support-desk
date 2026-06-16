@@ -20,13 +20,13 @@ import {
   Building2,
   Clock,
   CheckCircle2,
-  Loader2,
-  Save,
   ChevronLeft,
   Search,
   Layers,
   Lock,
-  UserCog
+  Inbox,
+  TicketCheck,
+  MessageSquareText
 } from "lucide-react";
 import { PRIORITIES } from "@/data/mockData";
 import { toast } from "sonner";
@@ -42,6 +42,9 @@ import GroupsView from "./admin/GroupsSettings";
 import PlansView from "./admin/PlansSettings";
 import SecurityView from "./admin/SecuritySettings";
 import AccountView from "./admin/AccountSettings";
+import InboxPreferencesView from "./admin/InboxPreferencesSettings";
+import TicketDefaultsView from "./admin/TicketDefaultsSettings";
+import CannedResponsesView from "./admin/CannedResponsesSettings";
 import CompanyLogoUpload from "@/components/CompanyLogoUpload";
 import {
   Table,
@@ -110,6 +113,43 @@ const DashboardView = ({ companyData }) => {
             title="SLA Policies"
             onClick={() => navigate('sla')}
           />
+          <SettingsCard
+            icon={Inbox}
+            title="Inbox Preferences"
+            description="Set layout, density, sorting, and queue behavior for agents."
+            configured
+            onClick={() => navigate('inbox')}
+          />
+        </div>
+      </div>
+
+      {/* Ticket Workflow */}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-bold text-foreground">Ticket Workflow</h2>
+          <Badge variant="secondary">3 of 3 Configured</Badge>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <SettingsCard
+            icon={TicketCheck}
+            title="Ticket Defaults"
+            description="Configure default status, priority, group, assignment, and auto-close rules."
+            configured
+            onClick={() => navigate('ticket_defaults')}
+          />
+          <SettingsCard
+            icon={MessageSquareText}
+            title="Canned Responses"
+            description="Create reusable replies and shortcuts for common support conversations."
+            configured
+            onClick={() => navigate('canned_responses')}
+          />
+          <SettingsCard
+            icon={Zap}
+            title="Automations"
+            description="Configure automated workflows, SLA policies, and escalation rules"
+            onClick={() => navigate('automations')}
+          />
         </div>
       </div>
 
@@ -163,12 +203,6 @@ const DashboardView = ({ companyData }) => {
             description="Integrate support mailboxes, configure DKIM, custom mail servers, Bcc and more"
             configured={emailEnabled}
             onClick={() => navigate('email')}
-          />
-          <SettingsCard
-            icon={Zap}
-            title="Automations"
-            description="Configure automated workflows, SLA policies, and escalation rules"
-            onClick={() => navigate('automations')}
           />
           <SettingsCard
             icon={Facebook}
@@ -347,6 +381,9 @@ export default function AdminSettings() {
         <Route path="plans" element={<PlansView paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod} currentPlan={currentPlan} setCurrentPlan={setCurrentPlan} />} />
         <Route path="security" element={<SecurityView />} />
         <Route path="account" element={<AccountView user={user} companyData={companyData} />} />
+        <Route path="inbox" element={<InboxPreferencesView />} />
+        <Route path="ticket_defaults" element={<TicketDefaultsView />} />
+        <Route path="canned_responses" element={<CannedResponsesView />} />
 
         {/* Placeholders */}
         <Route path="portals" element={<ChannelPlaceholderView title="Customer Portals" icon={LayoutGrid} description="Build a knowledge base and self-service portal for your customers." />} />
