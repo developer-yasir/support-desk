@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import CompanyTicketHistory from "@/components/CompanyTicketHistory";
 import { useNavigate } from "react-router-dom";
 import { 
@@ -40,7 +40,13 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import CompanyLogoUpload from "@/components/CompanyLogoUpload";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination";
+import { ChevronLeft } from "lucide-react";
+import { CompaniesSkeleton } from "@/components/ui/page-skeletons";
 
 export default function ClientCompanies() {
   const { isManager, isSuperAdmin, user } = useAuth();
@@ -48,6 +54,7 @@ export default function ClientCompanies() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 8 });
   const [viewMode, setViewMode] = useState("grid"); // "grid" or "table"
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingCompany, setEditingCompany] = useState(null);
@@ -73,19 +80,39 @@ export default function ClientCompanies() {
     fetchCompanies();
   }, []);
 
-  const fetchCompanies = async () => {
+  const fetchCompanies = useCallback(async (overrides = {}) => {
+    const nextPage = overrides.page ?? pagination.page;
+    const nextLimit = overrides.limit ?? pagination.limit;
+    const nextSearch = overrides.searchQuery ?? searchQuery;
+
     try {
       // Super Admin and Admin see all companies, Managers see only client companies
       const isAdmin = isSuperAdmin || user?.role === 'admin';
-      const params = isAdmin ? {} : { type: 'client-company' };
+      const params = {
+        page: nextPage,
+        limit: nextLimit,
+        search: nextSearch.trim(),
+        ...(isAdmin ? {} : { type: 'client-company' }),
+      };
       const response = await api.getCompanies(params);
-      setCompanies(response.data.companies);
+      const companiesData = response.data.companies || [];
+      setCompanies(companiesData);
+      if (response.pagination) {
+        setPagination(response.pagination);
+      } else {
+        setPagination({
+          total: companiesData.length,
+          page: nextPage,
+          pages: 1,
+          limit: nextLimit,
+        });
+      }
     } catch (error) {
       toast.error("Failed to fetch companies");
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.limit, pagination.page, searchQuery, isSuperAdmin, user?.role]);
 
   const getStatusBadge = (status) => {
     const styles = {
@@ -100,12 +127,7 @@ export default function ClientCompanies() {
     );
   };
 
-  const filteredCompanies = companies.filter(
-    (company) =>
-      company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (company.domain && company.domain.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (company.industry && company.industry.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredCompanies = companies;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -171,6 +193,11 @@ export default function ClientCompanies() {
     setExpandedCompany(expandedCompany === companyId ? null : companyId);
   };
 
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+
   const handleManageFeatures = (company) => {
     setManagingFeaturesCompany(company);
     setFeatures(company.features || {
@@ -203,12 +230,7 @@ export default function ClientCompanies() {
   };
 
   if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        <p className="text-muted-foreground animate-pulse text-sm">Loading client ecosystem...</p>
-      </div>
-    );
+    return <CompaniesSkeleton />;
   }
 
   const isAdminAccess = isManager || isSuperAdmin || user?.role === 'admin';
@@ -458,7 +480,7 @@ export default function ClientCompanies() {
               <Input
                 placeholder="Find a company, domain, or industry..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9 bg-background focus-visible:ring-primary shadow-inner"
               />
             </div>
@@ -672,6 +694,52 @@ export default function ClientCompanies() {
             </div>
           )}
         </CardContent>
+        <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {pagination.total > 0
+              ? `${(pagination.page - 1) * pagination.limit + 1} - ${Math.min(
+                  pagination.page * pagination.limit,
+                  pagination.total
+                )} of ${pagination.total}`
+              : "0 companies"}
+          </p>
+          <Pagination className="w-auto ml-auto sm:ml-0">
+            <PaginationContent>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() =>
+                    setPagination((prev) => ({
+                      ...prev,
+                      page: Math.max(1, prev.page - 1),
+                    }))
+                  }
+                  disabled={pagination.page === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </PaginationItem>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() =>
+                    setPagination((prev) => ({
+                      ...prev,
+                      page: Math.min(prev.pages, prev.page + 1),
+                    }))
+                  }
+                  disabled={pagination.page === pagination.pages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
       </Card>
 
       {/* Features Management Dialog */}

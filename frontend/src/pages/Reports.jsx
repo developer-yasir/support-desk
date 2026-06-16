@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Download, TrendingUp, TrendingDown, Clock, CheckCircle, Users } from "lucide-react";
 import {
   BarChart,
@@ -41,6 +42,54 @@ const MetricCard = ({ title, value, subtext, icon: Icon }) => (
   </Card>
 );
 
+const ReportsSkeleton = () => (
+  <div className="space-y-6">
+    <div className="flex items-center justify-between gap-4">
+      <div className="space-y-3">
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="h-4 w-72" />
+      </div>
+      <div className="flex gap-3">
+        <Skeleton className="h-10 w-36 rounded-md" />
+        <Skeleton className="h-10 w-32 rounded-md" />
+      </div>
+    </div>
+
+    <div className="grid gap-4 md:grid-cols-4">
+      {[0, 1, 2, 3].map((index) => (
+        <Card key={index}>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-4 w-4 rounded-full" />
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Skeleton className="h-8 w-20" />
+            <Skeleton className="h-3 w-28" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+
+    <Card>
+      <CardHeader>
+        <Skeleton className="h-6 w-44" />
+        <Skeleton className="h-4 w-72" />
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex gap-2">
+          <Skeleton className="h-9 w-28 rounded-full" />
+          <Skeleton className="h-9 w-36 rounded-full" />
+          <Skeleton className="h-9 w-32 rounded-full" />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-[320px] rounded-2xl" />
+          <Skeleton className="h-[320px] rounded-2xl" />
+        </div>
+      </CardContent>
+    </Card>
+  </div>
+);
+
 export default function Reports() {
   const [dateRange, setDateRange] = useState("7d");
   const [loading, setLoading] = useState(true);
@@ -68,11 +117,7 @@ export default function Reports() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <ReportsSkeleton />;
   }
 
   return (
@@ -233,4 +278,3 @@ export default function Reports() {
     </div>
   );
 }
-

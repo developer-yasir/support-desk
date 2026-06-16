@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -33,13 +33,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination";
 import { Label } from "@/components/ui/label";
-import { Plus, Search, MoreHorizontal, Shield, User, UserCog } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Shield, User, UserCog, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../contexts/AuthContext";
 
 import { api } from "../lib/api";
-import { Loader2 } from "lucide-react";
+import { AdminUsersSkeleton } from "@/components/ui/page-skeletons";
 
 // Helper to get initials
 const getInitials = (name) => {
@@ -73,6 +78,7 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 10 });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -81,22 +87,58 @@ export default function AdminUsers() {
     role: "agent",
   });
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async (overrides = {}) => {
+    const nextPage = overrides.page ?? pagination.page;
+    const nextLimit = overrides.limit ?? pagination.limit;
+    const nextSearch = overrides.search ?? search;
+    const nextRole = overrides.roleFilter ?? roleFilter;
+
     try {
       setLoading(true);
-      const res = await api.getUsers();
-      setUsers(res.data.users || []);
+      const params = {
+        page: nextPage,
+        limit: nextLimit,
+        search: nextSearch.trim(),
+      };
+
+      if (nextRole !== "all") {
+        params.role = nextRole;
+      }
+
+      const res = await api.getUsers(params);
+      const usersData = res.data.users || [];
+      setUsers(usersData);
+      if (res.pagination) {
+        setPagination(res.pagination);
+      } else {
+        setPagination({
+          total: usersData.length,
+          page: nextPage,
+          pages: 1,
+          limit: nextLimit,
+        });
+      }
     } catch (err) {
       toast.error("Failed to fetch users");
       console.error(err);
     } finally {
       setLoading(false);
     }
+  }, [pagination.limit, pagination.page, roleFilter, search]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  useState(() => {
-    fetchUsers();
-  }, []);
+  const handleRoleFilterChange = (value) => {
+    setRoleFilter(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
 
   const handleToggleFullAccess = async (user) => {
     if (user.role !== 'agent') return;
@@ -120,20 +162,14 @@ export default function AdminUsers() {
     }
   };
 
-  const filteredUsers = users.filter((user) => {
-    const matchesSearch =
-      user.name?.toLowerCase().includes(search.toLowerCase()) ||
-      user.email?.toLowerCase().includes(search.toLowerCase());
-    const matchesRole = roleFilter === "all" || user.role === roleFilter;
-    return matchesSearch && matchesRole;
-  });
+  const filteredUsers = users;
 
   const handleCreateUser = async (e) => {
     e.preventDefault();
 
     try {
       const res = await api.createUser(formData);
-      setUsers([...users, res.data.user]);
+      await fetchUsers({ page: 1 });
       toast.success("User created successfully!");
       setIsDialogOpen(false);
       setFormData({ name: "", email: "", password: "", role: "agent" }); // Reset
@@ -157,6 +193,10 @@ export default function AdminUsers() {
       { value: 'customer', label: 'Customer' }
     ];
   };
+
+  if (loading) {
+    return <AdminUsersSkeleton />;
+  }
 
   return (
     <div className="space-y-6">
@@ -253,11 +293,11 @@ export default function AdminUsers() {
           <Input
             placeholder="Search users..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             className="pl-9"
           />
         </div>
-        <Select value={roleFilter} onValueChange={setRoleFilter}>
+        <Select value={roleFilter} onValueChange={handleRoleFilterChange}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="All Roles" />
           </SelectTrigger>
@@ -283,13 +323,7 @@ export default function AdminUsers() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-                </TableCell>
-              </TableRow>
-            ) : filteredUsers.length === 0 ? (
+            {filteredUsers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   No users found
@@ -361,6 +395,52 @@ export default function AdminUsers() {
               )))}
           </TableBody>
         </Table>
+      </div>
+      <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-muted-foreground">
+          {pagination.total > 0
+            ? `${(pagination.page - 1) * pagination.limit + 1} - ${Math.min(
+                pagination.page * pagination.limit,
+                pagination.total
+              )} of ${pagination.total}`
+            : "0 users"}
+        </p>
+        <Pagination className="w-auto ml-auto sm:ml-0">
+          <PaginationContent>
+            <PaginationItem>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() =>
+                  setPagination((prev) => ({
+                    ...prev,
+                    page: Math.max(1, prev.page - 1),
+                  }))
+                }
+                disabled={pagination.page === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            </PaginationItem>
+            <PaginationItem>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() =>
+                  setPagination((prev) => ({
+                    ...prev,
+                    page: Math.min(prev.pages, prev.page + 1),
+                  }))
+                }
+                disabled={pagination.page === pagination.pages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
       </div>
     </div>
   );

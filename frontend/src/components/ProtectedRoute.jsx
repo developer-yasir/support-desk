@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import LoadingScreen from "@/components/ui/loading-screen";
 
 export default function ProtectedRoute({ children, requiredRole }) {
   const { user, loading } = useAuth();
@@ -7,8 +8,12 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      <div className="min-h-screen bg-background p-4">
+        <LoadingScreen
+          title="Securing your session"
+          subtitle="Verifying access and restoring your workspace..."
+          className="min-h-[calc(100vh-2rem)]"
+        />
       </div>
     );
   }

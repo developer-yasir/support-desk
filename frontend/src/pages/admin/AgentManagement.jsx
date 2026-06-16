@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Plus, Search, Pencil, Trash2, MoreHorizontal, UserCheck, UserX, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -41,7 +46,8 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
 import { api } from "@/lib/api";
-import { Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { AgentManagementSkeleton } from "@/components/ui/page-skeletons";
 
 const TEAMS = [
   { id: "1", name: "Technical Support" },
@@ -56,6 +62,7 @@ export default function AgentManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [teamFilter, setTeamFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 10 });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState(null);
   const [formData, setFormData] = useState({
@@ -65,32 +72,60 @@ export default function AgentManagement() {
     role: "agent",
   });
 
-  const fetchAgents = async () => {
+  const fetchAgents = useCallback(async (overrides = {}) => {
+    const nextPage = overrides.page ?? pagination.page;
+    const nextLimit = overrides.limit ?? pagination.limit;
+    const nextSearch = overrides.searchQuery ?? searchQuery;
+    const nextStatus = overrides.statusFilter ?? statusFilter;
+
     try {
       setLoading(true);
-      const res = await api.getUsers({ role: 'agent' });
-      // Map API data to component structure if needed, or just use as is
-      // Assuming res.data.users returns array of user objects
-      setAgents(res.data.users || []);
+      const res = await api.getUsers({
+        role: "agent",
+        page: nextPage,
+        limit: nextLimit,
+        search: nextSearch.trim(),
+      });
+
+      const agentsData = (res.data.users || []).filter((agent) => {
+        const matchesStatus =
+          nextStatus === "all" || (agent.isActive ? "active" : "inactive") === nextStatus;
+        return matchesStatus;
+      });
+
+      setAgents(agentsData);
+      if (res.pagination) {
+        setPagination(res.pagination);
+      } else {
+        setPagination({
+          total: agentsData.length,
+          page: nextPage,
+          pages: 1,
+          limit: nextLimit,
+        });
+      }
     } catch (error) {
       toast.error("Failed to fetch agents");
     } finally {
       setLoading(false);
     }
+  }, [pagination.limit, pagination.page, searchQuery, statusFilter]);
+
+  useEffect(() => {
+    fetchAgents();
+  }, [fetchAgents]);
+
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  useState(() => {
-    fetchAgents();
-  }, []);
+  const handleStatusFilterChange = (value) => {
+    setStatusFilter(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
 
-  const filteredAgents = agents.filter((agent) => {
-    const matchesSearch =
-      agent.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      agent.email?.toLowerCase().includes(searchQuery.toLowerCase());
-    // const matchesTeam = teamFilter === "all" || agent.teamId === teamFilter; // Team filtering disabled for now as teams aren't fully in backend
-    const matchesStatus = statusFilter === "all" || (agent.isActive ? "active" : "inactive") === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredAgents = agents;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -103,7 +138,7 @@ export default function AgentManagement() {
         toast.success("Agent updated successfully");
       } else {
         const res = await api.createUser({ ...formData, role: 'agent' });
-        setAgents(prev => [...prev, res.data.user]);
+        await fetchAgents({ page: 1 });
         toast.success("Agent created successfully");
       }
       setIsDialogOpen(false);
@@ -184,6 +219,10 @@ export default function AgentManagement() {
         </p>
       </div>
     );
+  }
+
+  if (loading) {
+    return <AgentManagementSkeleton />;
   }
 
   return (
@@ -351,7 +390,7 @@ export default function AgentManagement() {
               <Input
                 placeholder="Search agents..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9"
               />
             </div>
@@ -368,7 +407,7 @@ export default function AgentManagement() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={handleStatusFilterChange}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -474,6 +513,52 @@ export default function AgentManagement() {
             </TableBody>
           </Table>
         </CardContent>
+        <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {pagination.total > 0
+              ? `${(pagination.page - 1) * pagination.limit + 1} - ${Math.min(
+                  pagination.page * pagination.limit,
+                  pagination.total
+                )} of ${pagination.total}`
+              : "0 agents"}
+          </p>
+          <Pagination className="w-auto ml-auto sm:ml-0">
+            <PaginationContent>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() =>
+                    setPagination((prev) => ({
+                      ...prev,
+                      page: Math.max(1, prev.page - 1),
+                    }))
+                  }
+                  disabled={pagination.page === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </PaginationItem>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() =>
+                    setPagination((prev) => ({
+                      ...prev,
+                      page: Math.min(prev.pages, prev.page + 1),
+                    }))
+                  }
+                  disabled={pagination.page === pagination.pages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
       </Card>
     </div>
   );

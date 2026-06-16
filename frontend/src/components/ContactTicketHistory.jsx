@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDistanceToNow } from "date-fns";
-import { Loader2, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 
 export default function ContactTicketHistory({ contactId }) {
     const [tickets, setTickets] = useState([]);
@@ -28,7 +29,27 @@ export default function ContactTicketHistory({ contactId }) {
         fetchHistory();
     }, [contactId]);
 
-    if (loading) return <div className="flex justify-center p-4"><Loader2 className="animate-spin h-5 w-5 text-muted-foreground" /></div>;
+    if (loading) {
+        return (
+            <div className="space-y-2 p-4">
+                <Skeleton className="h-4 w-28" />
+                <div className="space-y-2">
+                    {[0, 1, 2].map((index) => (
+                        <div key={index} className="flex items-center justify-between gap-4 rounded-lg border p-3">
+                            <div className="flex items-center gap-3 flex-1">
+                                <Skeleton className="h-6 w-20 rounded-full" />
+                                <div className="space-y-2 flex-1">
+                                    <Skeleton className="h-4 w-48" />
+                                    <Skeleton className="h-3 w-24" />
+                                </div>
+                            </div>
+                            <Skeleton className="h-3 w-20" />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
     if (error) return <div className="p-4 text-red-500 flex items-center gap-2"><AlertCircle className="h-4 w-4" /> {error}</div>;
     if (tickets.length === 0) return <div className="p-4 text-muted-foreground text-sm italic">No tickets found for this contact.</div>;
 

@@ -1,18 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ContactTicketHistory from "@/components/ContactTicketHistory";
-import { useNavigate } from "react-router-dom";
-import { Plus, Search, Mail, Building2, Pencil, Trash2, MoreHorizontal, Ticket, ChevronDown, ChevronUp, UserCheck } from "lucide-react";
+import { Plus, Search, Mail, Building2, Pencil, Trash2, MoreHorizontal, ChevronDown, ChevronUp, UserCheck, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -43,18 +34,24 @@ import {
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination";
+import { ContactsSkeleton } from "@/components/ui/page-skeletons";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { api } from "@/lib/api";
 
 export default function Contacts() {
   const { isManager } = useAuth();
-  const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [companyFilter, setCompanyFilter] = useState("all");
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pages: 1, limit: 10 });
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
   const [expandedContact, setExpandedContact] = useState(null);
@@ -68,61 +65,74 @@ export default function Contacts() {
   });
 
   useEffect(() => {
-    fetchData();
+    const fetchCompanies = async () => {
+      try {
+        const companiesRes = await api.getCompanies();
+        setCompanies(companiesRes.data.companies || []);
+      } catch (error) {
+        toast.error("Failed to fetch companies");
+      }
+    };
+
+    fetchCompanies();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (overrides = {}) => {
+    const nextPage = overrides.page ?? pagination.page;
+    const nextLimit = overrides.limit ?? pagination.limit;
+    const nextSearch = overrides.searchQuery ?? searchQuery;
+    const nextCompanyFilter = overrides.companyFilter ?? companyFilter;
+
     try {
-      const [usersRes, companiesRes] = await Promise.all([
-        api.getUsers({ role: 'customer,agent,company_manager' }), // Fetch all relevant roles as comma-separated string
-        api.getCompanies()
-      ]);
-      setContacts(usersRes.data.users);
-      setCompanies(companiesRes.data.companies);
+      setLoading(true);
+      const usersRes = await api.getUsers({
+        role: "customer,agent,company_manager",
+        page: nextPage,
+        limit: nextLimit,
+        search: nextSearch.trim(),
+        ...(nextCompanyFilter !== "all" ? { companyId: nextCompanyFilter } : {}),
+      });
+
+      const usersData = usersRes.data?.users || [];
+      setContacts(usersData);
+
+      if (usersRes.pagination) {
+        const { page: currentPage, pages, total, limit } = usersRes.pagination;
+        if (nextPage > pages) {
+          setPagination((prev) => ({ ...prev, page: pages }));
+          return;
+        }
+        setPagination({ total, page: currentPage, pages, limit });
+      } else {
+        setPagination({
+          total: usersData.length,
+          page: nextPage,
+          pages: 1,
+          limit: nextLimit,
+        });
+      }
     } catch (error) {
       toast.error("Failed to fetch data");
     } finally {
       setLoading(false);
     }
+  }, [companyFilter, pagination.limit, pagination.page, searchQuery]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  const getStatusBadge = (status) => {
-    const styles = {
-      open: "bg-blue-100 text-blue-800",
-      in_progress: "bg-yellow-100 text-yellow-800",
-      resolved: "bg-green-100 text-green-800",
-      closed: "bg-gray-100 text-gray-800"
-    };
-    return (
-      <Badge className={styles[status] || styles.open}>
-        {status?.replace('_', ' ') || 'open'}
-      </Badge>
-    );
+  const handleCompanyFilterChange = (value) => {
+    setCompanyFilter(value);
+    setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  const getPriorityBadge = (priority) => {
-    const styles = {
-      urgent: "text-red-600 border-red-600",
-      high: "text-orange-600 border-orange-600",
-      medium: "text-blue-600 border-blue-600",
-      low: "text-gray-600 border-gray-600"
-    };
-    return (
-      <Badge variant="outline" className={styles[priority] || styles.medium}>
-        {priority || 'medium'}
-      </Badge>
-    );
-  };
-
-  const filteredContacts = contacts.filter((contact) => {
-    const matchesSearch =
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (contact.company?.name || "").toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCompany =
-      companyFilter === "all" || contact.company?._id === companyFilter;
-    return matchesSearch && matchesCompany;
-  });
+  const filteredContacts = contacts;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -170,8 +180,7 @@ export default function Contacts() {
     try {
       await api.updateUser(contact._id, { role: 'agent' });
       toast.success(`${contact.name} promoted to Agent`);
-      // Remove from contacts list locally since they are now an agent
-      setContacts(contacts.filter(c => c._id !== contact._id));
+      fetchData();
     } catch (error) {
       toast.error("Failed to promote user");
     }
@@ -197,11 +206,7 @@ export default function Contacts() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <ContactsSkeleton />;
   }
 
   return (
@@ -324,11 +329,11 @@ export default function Contacts() {
               <Input
                 placeholder="Search contacts..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9"
               />
             </div>
-            <Select value={companyFilter} onValueChange={setCompanyFilter}>
+            <Select value={companyFilter} onValueChange={handleCompanyFilterChange}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="Filter by company" />
               </SelectTrigger>
@@ -441,6 +446,52 @@ export default function Contacts() {
             )}
           </div>
         </CardContent>
+        <div className="border-t px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {pagination.total > 0
+              ? `${(pagination.page - 1) * pagination.limit + 1} - ${Math.min(
+                  pagination.page * pagination.limit,
+                  pagination.total
+                )} of ${pagination.total}`
+              : "0 contacts"}
+          </p>
+          <Pagination className="w-auto ml-auto sm:ml-0">
+            <PaginationContent>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() =>
+                    setPagination((prev) => ({
+                      ...prev,
+                      page: Math.max(1, prev.page - 1),
+                    }))
+                  }
+                  disabled={pagination.page === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </PaginationItem>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() =>
+                    setPagination((prev) => ({
+                      ...prev,
+                      page: Math.min(prev.pages, prev.page + 1),
+                    }))
+                  }
+                  disabled={pagination.page === pagination.pages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
       </Card>
     </div>
   );

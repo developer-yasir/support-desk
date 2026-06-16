@@ -1,12 +1,14 @@
 import User from '../models/User.model.js';
 import Company from '../models/Company.model.js';
 
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // @desc    Get all users
 // @route   GET /api/users
 // @access  Private (Admin/Manager)
 export const getUsers = async (req, res) => {
     try {
-        const { role, companyId } = req.query;
+        const { role, companyId, search } = req.query;
         let query = {};
 
         if (role) {
@@ -34,15 +36,60 @@ export const getUsers = async (req, res) => {
             query.company = companyId;
         }
 
-        const users = await User.find(query)
+        if (search && search.trim()) {
+            const trimmedSearch = search.trim();
+            const searchRegex = new RegExp(escapeRegex(trimmedSearch), 'i');
+            const matchingCompanyIds = await Company.distinct('_id', {
+                name: searchRegex
+            });
+
+            query.$or = [
+                { name: searchRegex },
+                { email: searchRegex },
+                { phone: searchRegex },
+                { jobTitle: searchRegex },
+            ];
+
+            if (matchingCompanyIds.length > 0) {
+                query.$or.push({ company: { $in: matchingCompanyIds } });
+            }
+        }
+
+        const page = parseInt(req.query.page, 10);
+        const limit = parseInt(req.query.limit, 10);
+        const shouldPaginate = Number.isInteger(page) || Number.isInteger(limit);
+        const currentPage = Number.isInteger(page) && page > 0 ? page : 1;
+        const pageSize = Number.isInteger(limit) && limit > 0 ? limit : 20;
+        const skip = (currentPage - 1) * pageSize;
+
+        const total = shouldPaginate ? await User.countDocuments(query) : 0;
+
+        const usersQuery = User.find(query)
             .select('-password')
             .populate('company', 'name domain');
 
-        res.status(200).json({
+        if (shouldPaginate) {
+            usersQuery.skip(skip).limit(pageSize);
+        }
+
+        const users = await usersQuery;
+
+        const response = {
             status: 'success',
             results: users.length,
             data: { users }
-        });
+        };
+
+        if (shouldPaginate) {
+            response.pagination = {
+                total,
+                page: currentPage,
+                pages: Math.max(1, Math.ceil(total / pageSize)),
+                limit: pageSize
+            };
+        }
+
+        res.status(200).json(response);
     } catch (error) {
         res.status(500).json({
             status: 'error',

@@ -10,7 +10,7 @@ import { syncInboundEmailForCompany, testImapConnectionForCompany } from '../ser
 // @access  Private
 export const getCompanies = async (req, res) => {
     try {
-        const { type } = req.query;
+        const { type, search } = req.query;
         let query = {};
 
         // If manager, only show their own company OR companies they created
@@ -40,7 +40,31 @@ export const getCompanies = async (req, res) => {
             }
         }
 
-        const companies = await Company.find(query).sort({ createdAt: -1 });
+        if (search && search.trim()) {
+            const trimmedSearch = search.trim();
+            const searchRegex = new RegExp(trimmedSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+            query.$or = [
+                { name: searchRegex },
+                { domain: searchRegex },
+                { industry: searchRegex }
+            ];
+        }
+
+        const page = parseInt(req.query.page, 10);
+        const limit = parseInt(req.query.limit, 10);
+        const shouldPaginate = Number.isInteger(page) || Number.isInteger(limit);
+        const currentPage = Number.isInteger(page) && page > 0 ? page : 1;
+        const pageSize = Number.isInteger(limit) && limit > 0 ? limit : 12;
+        const skip = (currentPage - 1) * pageSize;
+
+        const total = shouldPaginate ? await Company.countDocuments(query) : 0;
+
+        const companyQuery = Company.find(query).sort({ createdAt: -1 });
+        if (shouldPaginate) {
+            companyQuery.skip(skip).limit(pageSize);
+        }
+
+        const companies = await companyQuery;
 
         // Add statistics for each company
         const companiesWithStats = await Promise.all(companies.map(async (company) => {
@@ -71,7 +95,15 @@ export const getCompanies = async (req, res) => {
 
         res.status(200).json({
             status: 'success',
-            data: { companies: companiesWithStats }
+            data: { companies: companiesWithStats },
+            ...(shouldPaginate ? {
+                pagination: {
+                    total,
+                    page: currentPage,
+                    pages: Math.max(1, Math.ceil(total / pageSize)),
+                    limit: pageSize
+                }
+            } : {})
         });
     } catch (error) {
         res.status(500).json({

@@ -8,6 +8,7 @@ import { Save, ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import CompanyLogoUpload from "@/components/CompanyLogoUpload";
+import { CompanySettingsSkeleton } from "@/components/ui/page-skeletons";
 
 const CompanySettings = ({ companyData, onUpdate, loading }) => {
     const navigate = useNavigate();
@@ -67,9 +68,7 @@ const CompanySettings = ({ companyData, onUpdate, loading }) => {
             <Card>
                 <CardContent className="pt-6 space-y-6">
                     {loading ? (
-                        <div className="flex items-center justify-center py-8">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                        </div>
+                        <CompanySettingsSkeleton />
                     ) : companyData ? (
                         <>
                             <div className="pb-6 border-b">

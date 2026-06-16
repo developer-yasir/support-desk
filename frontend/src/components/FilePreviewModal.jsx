@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Download, FileText, Loader2, AlertCircle } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -77,9 +78,19 @@ export default function FilePreviewModal({ isOpen, onClose, file }) {
     const renderContent = () => {
         if (loading) {
             return (
-                <div className="flex flex-col items-center justify-center h-64">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
-                    <p className="text-muted-foreground">Loading preview...</p>
+                <div className="space-y-4 p-2">
+                    <div className="flex items-center gap-3">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        <div className="space-y-2 flex-1">
+                            <Skeleton className="h-4 w-40" />
+                            <Skeleton className="h-3 w-64" />
+                        </div>
+                    </div>
+                    <div className="grid gap-3">
+                        <Skeleton className="h-10 w-full rounded-lg" />
+                        <Skeleton className="h-10 w-5/6 rounded-lg" />
+                        <Skeleton className="h-[320px] w-full rounded-2xl" />
+                    </div>
                 </div>
             );
         }

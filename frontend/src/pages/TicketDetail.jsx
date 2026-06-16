@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { TicketDetailSkeleton } from "@/components/ui/page-skeletons";
 import {
   Reply,
   FileText,
@@ -266,7 +267,7 @@ export default function TicketDetail() {
   }, [ticket]);
 
   if (loading) {
-    return <div className="flex items-center justify-center h-full">Loading...</div>;
+    return <TicketDetailSkeleton />;
   }
 
   if (!ticket) {

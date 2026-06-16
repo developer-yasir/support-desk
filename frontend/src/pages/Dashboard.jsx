@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useFeatures } from "../contexts/FeaturesContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DashboardSkeleton } from "@/components/ui/page-skeletons";
 import { Link } from "react-router-dom";
 import {
   Ticket,
@@ -97,11 +98,7 @@ export default function Dashboard() {
   }, [isAdmin]);
 
   if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   // Admin/SuperAdmin Dashboard View

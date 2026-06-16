@@ -46,6 +46,7 @@ export default function CreateTicket() {
   const { user, isCustomer, isAgent, isStaff } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [creatingContact, setCreatingContact] = useState(false);
   const [contactOpen, setContactOpen] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
   const [ccOpen, setCcOpen] = useState(false);
@@ -191,6 +192,7 @@ export default function CreateTicket() {
     }
 
     try {
+      setCreatingContact(true);
       const company = companies.find((c) => c._id === newContactData.companyId);
 
       const payload = {
@@ -221,6 +223,8 @@ export default function CreateTicket() {
     } catch (error) {
       console.error("Create contact error:", error);
       toast.error(error.message || "Failed to create contact");
+    } finally {
+      setCreatingContact(false);
     }
   };
 
@@ -872,6 +876,7 @@ export default function CreateTicket() {
               <Input
                 id="newName"
                 value={newContactData.name}
+                disabled={creatingContact}
                 onChange={(e) =>
                   setNewContactData({ ...newContactData, name: e.target.value })
                 }
@@ -884,6 +889,7 @@ export default function CreateTicket() {
                 id="newEmail"
                 type="email"
                 value={newContactData.email}
+                disabled={creatingContact}
                 onChange={(e) =>
                   setNewContactData({ ...newContactData, email: e.target.value })
                 }
@@ -895,6 +901,7 @@ export default function CreateTicket() {
               <Input
                 id="newPhone"
                 value={newContactData.phone}
+                disabled={creatingContact}
                 onChange={(e) =>
                   setNewContactData({ ...newContactData, phone: e.target.value })
                 }
@@ -905,6 +912,7 @@ export default function CreateTicket() {
               <Label htmlFor="newCompany">Company</Label>
               <Select
                 value={newContactData.companyId}
+                disabled={creatingContact}
                 onValueChange={(value) =>
                   setNewContactData({ ...newContactData, companyId: value })
                 }
@@ -926,6 +934,7 @@ export default function CreateTicket() {
               <Input
                 id="newRole"
                 value={newContactData.role}
+                disabled={creatingContact}
                 onChange={(e) =>
                   setNewContactData({ ...newContactData, role: e.target.value })
                 }
@@ -934,18 +943,23 @@ export default function CreateTicket() {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setNewContactData({ name: "", email: "", phone: "", companyId: "", role: "" });
-                setNewContactOpen(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="button" onClick={handleCreateNewContact}>
-              <UserPlus className="h-4 w-4 mr-2" />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={creatingContact}
+                onClick={() => {
+                  setNewContactData({ name: "", email: "", phone: "", companyId: "", role: "" });
+                  setNewContactOpen(false);
+                }}
+              >
+                Cancel
+              </Button>
+            <Button type="button" onClick={handleCreateNewContact} disabled={creatingContact}>
+              {creatingContact ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <UserPlus className="h-4 w-4 mr-2" />
+              )}
               Create & Select
             </Button>
           </DialogFooter>

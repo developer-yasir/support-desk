@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Building2, Sparkles } from "lucide-react";
+import { Building2, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -72,6 +72,7 @@ export default function CompanySetupModal({ open, onComplete }) {
                         <Input
                             id="companyName"
                             value={formData.name}
+                            disabled={loading}
                             onChange={(e) =>
                                 setFormData({ ...formData, name: e.target.value })
                             }
@@ -87,6 +88,7 @@ export default function CompanySetupModal({ open, onComplete }) {
                             id="domain"
                             placeholder="example.com"
                             value={formData.domain}
+                            disabled={loading}
                             onChange={(e) =>
                                 setFormData({ ...formData, domain: e.target.value })
                             }
@@ -105,6 +107,7 @@ export default function CompanySetupModal({ open, onComplete }) {
                             id="industry"
                             placeholder="Technology, Healthcare, Finance, etc."
                             value={formData.industry}
+                            disabled={loading}
                             onChange={(e) =>
                                 setFormData({ ...formData, industry: e.target.value })
                             }
@@ -118,6 +121,7 @@ export default function CompanySetupModal({ open, onComplete }) {
                             id="notes"
                             placeholder="Additional information about your company..."
                             value={formData.notes}
+                            disabled={loading}
                             onChange={(e) =>
                                 setFormData({ ...formData, notes: e.target.value })
                             }
@@ -133,6 +137,7 @@ export default function CompanySetupModal({ open, onComplete }) {
                     </div>
 
                     <Button type="submit" className="w-full" disabled={loading}>
+                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         {loading ? "Setting up..." : "Complete Setup"}
                     </Button>
                 </form>
